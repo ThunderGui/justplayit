@@ -4,11 +4,18 @@ export type Lang = 'en' | 'de' | 'pt';
 
 /**
  * Who is allowed to turn a "I paid you" claim into a ledger entry.
- *  - receiver: only the person receiving the money (strictest, default)
- *  - both:     sender's claim needs the receiver's ack, or vice versa
- *  - anyone:   any group member can vouch (loosest)
+ *
+ *  - receiver: only the person receiving the money may confirm. A sender's
+ *              claim waits for them to approve it.
+ *  - both:     either party may confirm on their own (the default).
+ *  - dual:     neither party may confirm alone — whoever claims, the other one
+ *              has to approve. The strictest setting, and the only one where a
+ *              payment always carries two people's word.
+ *  - anyone:   any group member may confirm (loosest).
+ *
+ * An admin can always confirm, in every mode.
  */
-export type PaymentConfirmationMode = 'receiver' | 'both' | 'anyone';
+export type PaymentConfirmationMode = 'receiver' | 'both' | 'dual' | 'anyone';
 
 export interface Settings {
   language: Lang;
@@ -39,7 +46,7 @@ export const DEFAULT_SETTINGS: Settings = {
   currency: 'EUR',
   groupJid: '',
   commandPrefix: '!',
-  paymentConfirmationMode: 'receiver',
+  paymentConfirmationMode: 'both',
   allowCustomPlaces: true,
   defaultCancelLimitHours: 24,
   allowPerBookingCancelLimit: true,

@@ -58,6 +58,11 @@ export async function startWhatsApp(onMessage: MessageHandler): Promise<WhatsApp
   // Baileys tears the socket down on most errors; a fresh one is cheap.
   let reconnectAttempts = 0;
 
+  const usePairingCode = config.whatsappPairingNumber.length > 0;
+  if (usePairingCode) {
+    logger.info('linking by pairing code (no QR scan needed)');
+  }
+
   const connect = (): void => {
     socket = makeWASocket({
       version,
@@ -74,10 +79,32 @@ export async function startWhatsApp(onMessage: MessageHandler): Promise<WhatsApp
 
     socket.ev.on('creds.update', saveCreds);
 
+    // Pairing-code linking: WhatsApp shows an 8-character code that the user
+    // types on the primary device. This is the only workable route when the
+    // primary WhatsApp runs in an Android emulator, which has no camera to
+    // point at a QR code.
+    if (usePairingCode && !socket.authState.creds.registered) {
+      // The socket has to finish its opening handshake before the request is
+      // accepted, and Baileys exposes no event for that point.
+      setTimeout(async () => {
+        try {
+          const code = await socket!.requestPairingCode(config.whatsappPairingNumber);
+          const pretty = code.match(/.{1,4}/g)?.join('-') ?? code;
+          logger.info(
+            `Pairing code: ${pretty} — on the bot's WhatsApp, open ` +
+              'Linked devices → Link a device → Link with phone number instead, and enter it.',
+          );
+        } catch (err) {
+          logger.error({ err }, 'could not request a pairing code');
+        }
+      }, 4000);
+    }
+
     socket.ev.on('connection.update', (update) => {
       const { connection, lastDisconnect, qr } = update;
 
-      if (qr) {
+      // In pairing mode the QR is noise — the code above is what to use.
+      if (qr && !usePairingCode) {
         logger.info('Scan this QR code in WhatsApp → Linked devices → Link a device');
         qrcode.generate(qr, { small: true });
       }

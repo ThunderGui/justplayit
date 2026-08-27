@@ -94,6 +94,52 @@ Copy the new source over `/addons/justplayit/`, bump `version` in `config.yaml`
 
 ---
 
+## Linking WhatsApp without a phone
+
+The bot links to WhatsApp as a *companion device*, so something has to hold the
+primary account. That does not have to be a physical phone — it can be an
+Android emulator running on a laptop or a small x86 box.
+
+### The number
+
+WhatsApp registration needs a number that can receive an **SMS or a voice call**,
+once. Data-only travel eSIMs generally have no phone number at all, so nothing
+can be delivered to them — check that the plan actually includes one before
+building on it. After registration WhatsApp runs entirely over IP, so the SIM
+does not need to stay in service, though keeping it is wise in case WhatsApp
+ever asks you to re-verify.
+
+### Linking by pairing code
+
+An emulator has no camera, so it cannot scan the QR code the bot prints. Use the
+pairing-code flow instead: set
+
+```
+WHATSAPP_PAIRING_NUMBER=4915112345678     # the bot's own number, digits only
+```
+
+(or `pairing_number` in the Home Assistant add-on options). On startup the bot
+logs an eight-character code:
+
+```
+Pairing code: ABCD-EFGH — on the bot's WhatsApp, open
+Linked devices → Link a device → Link with phone number instead, and enter it.
+```
+
+Type it into WhatsApp on the primary device. No camera, no QR.
+
+### Practical notes
+
+- The primary must come online at least every ~14 days, or WhatsApp drops all
+  linked devices — and with them the bot's session.
+- The emulator cannot run on the Pi (no KVM, not enough RAM). It would live on
+  a laptop or a small always-on machine; the bot itself still runs on the Pi and
+  connects independently.
+- WhatsApp running on an emulator is a known ban signal. A cheap second-hand
+  Android on WiFi in a drawer is less elegant and considerably more durable.
+
+---
+
 ## Backups
 
 The bot snapshots its own database once a day into `<data>/backups/`, keeping the

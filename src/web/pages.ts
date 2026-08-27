@@ -450,6 +450,7 @@ export function backupsPage(files: BackupFile[]): string {
 const CONFIRMATION_MODES: [PaymentConfirmationMode, string][] = [
   ['receiver', 'Only the person who receives the money'],
   ['both', 'Either the sender or the receiver'],
+  ['dual', 'Both of them — whoever records it, the other must approve'],
   ['anyone', 'Anyone in the group'],
 ];
 
@@ -582,8 +583,10 @@ export function settingsPage(groups: { id: string; subject: string }[]): string 
         ).join('')}
       </select>
       <p class="muted" style="margin:8px 0 0">
-        Anyone may claim a payment. If they are not allowed to confirm it themselves,
-        the receiver gets a private message to approve or reject it.
+        Anyone may record a payment. If they are not allowed to confirm it themselves,
+        the other party gets a private message to approve or reject it. Under
+        <em>Both of them</em> no single person can clear a debt alone, so every payment
+        carries two people's word.
       </p>
 
       <label for="paymentDeadlineDays" style="margin-top:18px">Payment deadline (days after the game)</label>

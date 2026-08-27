@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { handleCommand, type CommandContext, type OutgoingMessage } from '../src/bot/commands.js';
 import { parseMessage, type ParsedCommand } from '../src/bot/parser.js';
 import { findBookingByCode, getRoster, joinBooking } from '../src/domain/bookings.js';
-import { settleBooking } from '../src/domain/ledger.js';
+import { balanceFor, settleBooking } from '../src/domain/ledger.js';
 import { createPlace } from '../src/domain/places.js';
 import { getSettings, setSettings } from '../src/domain/settings.js';
 import { t } from '../src/i18n/index.js';
@@ -275,5 +275,84 @@ describe('help', () => {
     expect(text).toContain('!playtomic');
     expect(text).toContain('!balance');
     expect(text).toContain('Rules');
+  });
+});
+
+describe('dual confirmation policy', () => {
+  /**
+   * Sets up a €10 debt from Bob to Alice, with both of them ordinary members —
+   * the first user created becomes admin, and an admin bypasses every
+   * confirmation policy, which would defeat the point of these tests.
+   */
+  function debtBobOwesAlice() {
+    user('Zed the admin');
+    const alice = user('Alice');
+    const bob = user('Bob');
+    const b = booking(alice, { totalCostCents: 2000, minPlayers: 2, maxPlayers: 2 });
+    joinBooking(b.code, bob);
+    settleBooking(b.id);
+    return { alice, bob };
+  }
+
+  it('lets neither party clear a debt on their own', () => {
+    setSettings({ paymentConfirmationMode: 'dual' });
+    const { alice, bob } = debtBobOwesAlice();
+
+    // The sender says they paid: still needs Alice's word.
+    const out = send('!confirm Alice', bob, { isGroup: false, chatId: 'dm-bob' });
+    expect(textOf(out)).toContain('Waiting for them to confirm');
+    expect(balanceFor(bob.id)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
+
+    const code = out[0]!.text.match(/\*([A-Z0-9]{4})\*/)![1]!;
+
+    // Bob cannot approve his own claim.
+    const selfApprove = send(`!approve ${code}`, bob, { isGroup: false, chatId: 'dm-bob' });
+    expect(textOf(selfApprove)).toContain('Only the person receiving');
+    expect(balanceFor(bob.id)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
+
+    // Alice signs off and only now is it real.
+    const approved = send(`!approve ${code}`, alice, { isGroup: false, chatId: 'dm-alice' });
+    expect(textOf(approved)).toContain('confirmed');
+    expect(balanceFor(bob.id)).toEqual([]);
+  });
+
+  it('routes approval to the sender when the receiver files the claim', () => {
+    setSettings({ paymentConfirmationMode: 'dual' });
+    const { alice, bob } = debtBobOwesAlice();
+
+    // Alice records that Bob paid her; under dual it is Bob who must confirm.
+    const out = send('!confirm Bob', alice, { isGroup: false, chatId: 'dm-alice' });
+    const dm = out.find((m) => m.target === 'dm');
+    expect(dm?.userId).toBe(bob.id);
+    expect(dm?.text).toContain('recorded that you paid them');
+
+    const code = out[0]!.text.match(/\*([A-Z0-9]{4})\*/)![1]!;
+    const approved = send(`!approve ${code}`, bob, { isGroup: false, chatId: 'dm-bob' });
+    expect(textOf(approved)).toContain('confirmed');
+    expect(balanceFor(bob.id)).toEqual([]);
+  });
+
+  it('still lets an admin confirm directly', () => {
+    setSettings({ paymentConfirmationMode: 'dual' });
+    const alice = user('Alice'); // first user created is the admin
+    const bob = user('Bob');
+    const b = booking(alice, { totalCostCents: 2000, minPlayers: 2, maxPlayers: 2 });
+    joinBooking(b.code, bob);
+    settleBooking(b.id);
+
+    const out = send('!confirm Bob', alice, { isGroup: false });
+    expect(textOf(out)).toContain('Payment recorded');
+    expect(balanceFor(bob.id)).toEqual([]);
+  });
+
+  it('rejecting leaves the debt standing', () => {
+    setSettings({ paymentConfirmationMode: 'dual' });
+    const { alice, bob } = debtBobOwesAlice();
+
+    const out = send('!confirm Alice', bob, { isGroup: false, chatId: 'dm-bob' });
+    const code = out[0]!.text.match(/\*([A-Z0-9]{4})\*/)![1]!;
+
+    send(`!reject ${code}`, alice, { isGroup: false, chatId: 'dm-alice' });
+    expect(balanceFor(bob.id)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
   });
 });

@@ -212,4 +212,20 @@ export const MIGRATIONS: Migration[] = [
     CREATE INDEX idx_processed_at ON processed_messages(processed_at);
     `,
   },
+  {
+    id: 2,
+    name: 'claim_approver',
+    up: `
+    /* Until now a pending claim was always approved by the receiver. With the
+       'dual' confirmation mode either party can be the one who still has to
+       sign off — if the receiver files the claim, the sender approves it — so
+       the approver has to be recorded per claim rather than inferred. */
+    ALTER TABLE payment_claims ADD COLUMN approver_user_id INTEGER REFERENCES users(id);
+
+    /* Existing pending claims keep their old semantics. */
+    UPDATE payment_claims SET approver_user_id = to_user_id WHERE approver_user_id IS NULL;
+
+    CREATE INDEX idx_claims_approver ON payment_claims(approver_user_id, status);
+    `,
+  },
 ];

@@ -35,6 +35,7 @@ webui: "http://[HOST]:[PORT:8080]/"
 
 options:
   admin_password: ""
+  pairing_number: ""
   log_level: info
   web_port: 8080
 
@@ -43,5 +44,8 @@ schema:
   admin_password: str
   # Optional. Set a fixed value to keep admin sessions valid across restarts.
   session_secret: str?
+  # Optional. The bot's own number, digits only, to link by pairing code instead
+  # of a QR scan — necessary when its WhatsApp runs in an emulator.
+  pairing_number: str?
   log_level: list(trace|debug|info|warn|error|fatal)
   web_port: port

@@ -19,6 +19,7 @@ export interface PaymentClaim {
   proof_path: string | null;
   status: ClaimStatus;
   claimed_by: number;
+  approver_user_id: number | null;
   resolved_by: number | null;
   resolved_at: string | null;
   ledger_entry_id: number | null;
@@ -45,6 +46,9 @@ export function mayConfirm(
     // Either party to the transfer may vouch for it.
     case 'both':
       return claimantId === fromUserId || claimantId === toUserId;
+    // Nobody signs off alone: the other party always has to approve.
+    case 'dual':
+      return false;
     // Anyone in the group can vouch (loosest; useful for small trusted groups).
     case 'anyone':
       return true;
@@ -53,13 +57,25 @@ export function mayConfirm(
   }
 }
 
+/**
+ * Who has to approve a claim that the claimant could not confirm themselves.
+ * Whichever side of the transfer the claimant is on, it falls to the other one;
+ * a claim filed by a bystander goes to the person who received the money.
+ */
+export function approverFor(claimantId: number, fromUserId: number, toUserId: number): number {
+  return claimantId === toUserId ? fromUserId : toUserId;
+}
+
 export function findClaimByCode(code: string): PaymentClaim | undefined {
   return one<PaymentClaim>('SELECT * FROM payment_claims WHERE code = ?', normaliseCode(code));
 }
 
+/** Claims waiting on this person's approval (not necessarily the receiver). */
 export function listPendingClaimsFor(userId: number): PaymentClaim[] {
   return many<PaymentClaim>(
-    `SELECT * FROM payment_claims WHERE status = 'PENDING' AND to_user_id = ? ORDER BY created_at`,
+    `SELECT * FROM payment_claims
+      WHERE status = 'PENDING' AND COALESCE(approver_user_id, to_user_id) = ?
+      ORDER BY created_at`,
     userId,
   );
 }
@@ -121,11 +137,13 @@ export function claimPayment(input: {
       (candidate) => one('SELECT 1 AS x FROM payment_claims WHERE code = ?', candidate) != null,
     );
 
+    const approverUserId = approverFor(input.claimant.id, input.fromUserId, input.toUserId);
+
     const { lastInsertRowid } = run(
       `INSERT INTO payment_claims
          (code, from_user_id, to_user_id, amount_cents, currency, booking_id,
-          proof_path, status, claimed_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          proof_path, status, claimed_by, approver_user_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       code,
       input.fromUserId,
       input.toUserId,
@@ -135,13 +153,14 @@ export function claimPayment(input: {
       input.proofPath ?? null,
       approvedNow ? 'APPROVED' : 'PENDING',
       input.claimant.id,
+      approverUserId,
       nowIso(),
     );
 
     const claim = one<PaymentClaim>('SELECT * FROM payment_claims WHERE id = ?', lastInsertRowid)!;
 
     if (!approvedNow) {
-      return { ok: true, status: 'PENDING', claim, approverUserId: input.toUserId };
+      return { ok: true, status: 'PENDING', claim, approverUserId };
     }
 
     const entry = addLedgerEntry({
@@ -184,7 +203,8 @@ export function approveClaim(code: string, actor: User, actorIsAdmin: boolean): 
     const claim = findClaimByCode(code);
     if (!claim) return { ok: false, reason: 'not_found' };
     if (claim.status !== 'PENDING') return { ok: false, reason: 'already_resolved' };
-    if (!actorIsAdmin && actor.id !== claim.to_user_id) return { ok: false, reason: 'not_allowed' };
+    const approver = claim.approver_user_id ?? claim.to_user_id;
+    if (!actorIsAdmin && actor.id !== approver) return { ok: false, reason: 'not_allowed' };
 
     const entry = addLedgerEntry({
       kind: 'PAYMENT',
@@ -219,7 +239,8 @@ export function rejectClaim(code: string, actor: User, actorIsAdmin: boolean): R
   const claim = findClaimByCode(code);
   if (!claim) return { ok: false, reason: 'not_found' };
   if (claim.status !== 'PENDING') return { ok: false, reason: 'already_resolved' };
-  if (!actorIsAdmin && actor.id !== claim.to_user_id) return { ok: false, reason: 'not_allowed' };
+  const approver = claim.approver_user_id ?? claim.to_user_id;
+  if (!actorIsAdmin && actor.id !== approver) return { ok: false, reason: 'not_allowed' };
 
   run(
     `UPDATE payment_claims SET status = 'REJECTED', resolved_by = ?, resolved_at = ? WHERE id = ?`,

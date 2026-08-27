@@ -19,6 +19,7 @@ function applyHomeAssistantOptions(): void {
   const MAPPING: Record<string, string> = {
     admin_password: 'ADMIN_PASSWORD',
     session_secret: 'SESSION_SECRET',
+    pairing_number: 'WHATSAPP_PAIRING_NUMBER',
     web_port: 'WEB_PORT',
     log_level: 'LOG_LEVEL',
   };
@@ -53,6 +54,15 @@ const schema = z.object({
 
   /** Set to 0 during development to skip connecting to WhatsApp. */
   WHATSAPP_ENABLED: z.coerce.number().default(1),
+
+  /**
+   * Link by pairing code instead of QR. Set to the bot's own number in
+   * international format, digits only (e.g. 4915112345678).
+   *
+   * This is the route to use when the primary WhatsApp runs in an Android
+   * emulator, which has no camera to scan a QR code with.
+   */
+  WHATSAPP_PAIRING_NUMBER: z.string().default(''),
 });
 
 const env = schema.parse(process.env);
@@ -77,6 +87,8 @@ export const config = {
     sessionSecret: env.SESSION_SECRET,
   },
   whatsappEnabled: env.WHATSAPP_ENABLED === 1,
+  /** Digits only; empty means link by QR code instead. */
+  whatsappPairingNumber: env.WHATSAPP_PAIRING_NUMBER.replace(/\D/g, ''),
 } as const;
 
 export type Config = typeof config;

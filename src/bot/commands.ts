@@ -582,11 +582,19 @@ function handleConfirm(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage
 
   const amountArg = cmd.args.map((a) => parseMoneyToCents(a)).find((c) => c != null);
 
+  // Work out which way the money went from the netted balance: `!confirm X`
+  // means "I paid X" when I owe them, and "X paid me" when they owe me. Without
+  // this the person receiving money could never record a payment, which is what
+  // the receiver-only and dual policies rely on.
+  const netWithTarget =
+    balanceFor(ctx.user.id).find((b) => b.otherUserId === targetUserId)?.cents ?? 0;
+  const iAmThePayer = netWithTarget > 0;
+
   const result = claimPayment({
     claimant: ctx.user,
     claimantIsAdmin: ctx.isAdmin,
-    fromUserId: ctx.user.id,
-    toUserId: targetUserId,
+    fromUserId: iAmThePayer ? ctx.user.id : targetUserId,
+    toUserId: iAmThePayer ? targetUserId : ctx.user.id,
     amountCents: amountArg ?? undefined,
     proofPath: ctx.attachmentPath ?? null,
   });
@@ -604,28 +612,40 @@ function handleConfirm(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage
     }
   }
 
-  const receiver = findUserById(targetUserId);
+  const payer = findUserById(result.claim.from_user_id);
+  const receiver = findUserById(result.claim.to_user_id);
   const amountText = formatMoney(result.claim.amount_cents, result.claim.currency);
 
   if (result.status === 'PENDING') {
-    return [
-      // Answer where it was asked, per the design's channel rule.
-      reply(dict.payment.pending(result.claim.code, displayName(receiver), amountText)),
-      toDm(
-        result.approverUserId,
-        dict.payment.approvalRequest(
+    // Under the strictest policy the receiver can be the one filing the claim,
+    // in which case it is the *sender* who has to sign off — and the wording
+    // has to flip with it.
+    const approverIsSender = result.approverUserId === result.claim.from_user_id;
+
+    const request = approverIsSender
+      ? dict.payment.approvalRequestToSender(
           result.claim.code,
           displayName(ctx.user),
           amountText,
           ctx.settings.commandPrefix,
-        ),
-      ),
+        )
+      : dict.payment.approvalRequest(
+          result.claim.code,
+          displayName(ctx.user),
+          amountText,
+          ctx.settings.commandPrefix,
+        );
+
+    return [
+      // Answer where it was asked, per the design's channel rule.
+      reply(dict.payment.pending(result.claim.code, displayName(receiver), amountText)),
+      toDm(result.approverUserId, request),
     ];
   }
 
   const messages: OutgoingMessage[] = [
     reply(
-      `${dict.payment.recorded(displayName(ctx.user), displayName(receiver), amountText)}\n` +
+      `${dict.payment.recorded(displayName(payer), displayName(receiver), amountText)}\n` +
         (result.remainingCents > 0
           ? dict.payment.remaining(formatMoney(result.remainingCents, result.claim.currency))
           : dict.payment.settledUp),
@@ -635,10 +655,7 @@ function handleConfirm(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage
   // Let the other side know without making the whole group read it.
   if (targetUserId !== ctx.user.id) {
     messages.push(
-      toDm(
-        targetUserId,
-        dict.payment.recorded(displayName(ctx.user), displayName(receiver), amountText),
-      ),
+      toDm(targetUserId, dict.payment.recorded(displayName(payer), displayName(receiver), amountText)),
     );
   }
 

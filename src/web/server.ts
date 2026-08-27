@@ -354,7 +354,7 @@ export function createWebApp(deps: WebDeps) {
 
     const current = getSettings();
     const languages: Lang[] = ['en', 'de', 'pt'];
-    const modes: PaymentConfirmationMode[] = ['receiver', 'both', 'anyone'];
+    const modes: PaymentConfirmationMode[] = ['receiver', 'both', 'dual', 'anyone'];
 
     const language = languages.includes(String(body.language) as Lang)
       ? (String(body.language) as Lang)

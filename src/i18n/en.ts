@@ -136,6 +136,10 @@ export const en = {
     approvalRequest: (code: string, from: string, amount: string, prefix: string) =>
       `${from} says they paid you ${amount}.\n` +
       `Send ${prefix}approve ${code} if that is right, or ${prefix}reject ${code} if not.`,
+    /** Used when the receiver files the claim and the sender must sign off. */
+    approvalRequestToSender: (code: string, to: string, amount: string, prefix: string) =>
+      `${to} recorded that you paid them ${amount}.\n` +
+      `Send ${prefix}approve ${code} if that is right, or ${prefix}reject ${code} if not.`,
     approved: (code: string, amount: string) => `Payment *${code}* (${amount}) confirmed. Thanks!`,
     rejected: (code: string) => `Payment *${code}* was rejected.`,
     claimNotFound: (code: string) => `I have no pending payment with the ID *${code}*.`,

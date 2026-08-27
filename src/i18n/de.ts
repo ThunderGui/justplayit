@@ -131,6 +131,9 @@ export const de: Dict = {
     approvalRequest: (code: string, from: string, amount: string, prefix: string) =>
       `${from} gibt an, dir ${amount} gezahlt zu haben.\n` +
       `Schick ${prefix}approve ${code}, wenn das stimmt, sonst ${prefix}reject ${code}.`,
+    approvalRequestToSender: (code: string, to: string, amount: string, prefix: string) =>
+      `${to} hat erfasst, dass du ${amount} gezahlt hast.\n` +
+      `Schick ${prefix}approve ${code}, wenn das stimmt, sonst ${prefix}reject ${code}.`,
     approved: (code: string, amount: string) => `Zahlung *${code}* (${amount}) bestätigt. Danke!`,
     rejected: (code: string) => `Zahlung *${code}* wurde abgelehnt.`,
     claimNotFound: (code: string) => `Ich habe keine offene Zahlung mit der ID *${code}*.`,

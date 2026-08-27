@@ -131,6 +131,9 @@ export const pt: Dict = {
     approvalRequest: (code: string, from: string, amount: string, prefix: string) =>
       `${from} diz que te pagou ${amount}.\n` +
       `Envia ${prefix}approve ${code} se estiver certo, ou ${prefix}reject ${code} se não.`,
+    approvalRequestToSender: (code: string, to: string, amount: string, prefix: string) =>
+      `${to} registou que lhe pagaste ${amount}.\n` +
+      `Envia ${prefix}approve ${code} se estiver certo, ou ${prefix}reject ${code} se não.`,
     approved: (code: string, amount: string) => `Pagamento *${code}* (${amount}) confirmado. Obrigado!`,
     rejected: (code: string) => `O pagamento *${code}* foi rejeitado.`,
     claimNotFound: (code: string) => `Não tenho nenhum pagamento pendente com o ID *${code}*.`,
