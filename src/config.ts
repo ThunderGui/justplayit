@@ -1,0 +1,46 @@
+import 'dotenv/config';
+import path from 'node:path';
+import { z } from 'zod';
+
+const schema = z.object({
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  DATA_DIR: z.string().default('./data'),
+  LOG_LEVEL: z.string().default('info'),
+
+  /** Set to 0 to run the bot without the admin web UI. */
+  WEB_PORT: z.coerce.number().int().default(8080),
+  WEB_HOST: z.string().default('0.0.0.0'),
+  /** Admin console password. Required whenever the web UI is enabled. */
+  ADMIN_PASSWORD: z.string().default(''),
+  /** Signing secret for the admin session cookie. Generated per-install if unset. */
+  SESSION_SECRET: z.string().default(''),
+
+  /** Set to 0 during development to skip connecting to WhatsApp. */
+  WHATSAPP_ENABLED: z.coerce.number().default(1),
+});
+
+const env = schema.parse(process.env);
+
+const dataDir = path.resolve(env.DATA_DIR);
+
+export const config = {
+  env: env.NODE_ENV,
+  isProduction: env.NODE_ENV === 'production',
+  logLevel: env.LOG_LEVEL,
+  dataDir,
+  dbPath: path.join(dataDir, 'justplayit.db'),
+  /** Baileys multi-device auth state (the "logged in device" credentials). */
+  authDir: path.join(dataDir, 'wa-auth'),
+  /** Payment proof attachments. */
+  mediaDir: path.join(dataDir, 'media'),
+  web: {
+    enabled: env.WEB_PORT > 0,
+    port: env.WEB_PORT,
+    host: env.WEB_HOST,
+    adminPassword: env.ADMIN_PASSWORD,
+    sessionSecret: env.SESSION_SECRET,
+  },
+  whatsappEnabled: env.WHATSAPP_ENABLED === 1,
+} as const;
+
+export type Config = typeof config;

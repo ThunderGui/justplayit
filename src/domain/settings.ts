@@ -1,0 +1,136 @@
+import { many, one, run } from '../db/index.js';
+
+export type Lang = 'en' | 'de' | 'pt';
+
+/**
+ * Who is allowed to turn a "I paid you" claim into a ledger entry.
+ *  - receiver: only the person receiving the money (strictest, default)
+ *  - both:     sender's claim needs the receiver's ack, or vice versa
+ *  - anyone:   any group member can vouch (loosest)
+ */
+export type PaymentConfirmationMode = 'receiver' | 'both' | 'anyone';
+
+export interface Settings {
+  language: Lang;
+  timezone: string;
+  currency: string;
+  groupJid: string;
+  commandPrefix: string;
+  paymentConfirmationMode: PaymentConfirmationMode;
+  allowCustomPlaces: boolean;
+  defaultCancelLimitHours: number;
+  allowPerBookingCancelLimit: boolean;
+  requirePaymentProof: boolean;
+  paymentDeadlineDays: number;
+  defaultDurationMin: number;
+  defaultMinPlayers: number;
+  defaultMaxPlayers: number;
+  /** Hours before start to nudge the group about unfilled slots. 0 disables. */
+  reminderHoursBefore: number;
+  /** Retention window for message-processing records, in days (GDPR). */
+  dataRetentionDays: number;
+}
+
+export const DEFAULT_SETTINGS: Settings = {
+  language: 'en',
+  timezone: 'Europe/Berlin',
+  currency: 'EUR',
+  groupJid: '',
+  commandPrefix: '!',
+  paymentConfirmationMode: 'receiver',
+  allowCustomPlaces: true,
+  defaultCancelLimitHours: 24,
+  allowPerBookingCancelLimit: true,
+  requirePaymentProof: false,
+  paymentDeadlineDays: 7,
+  defaultDurationMin: 90,
+  defaultMinPlayers: 4,
+  defaultMaxPlayers: 4,
+  reminderHoursBefore: 26,
+  dataRetentionDays: 90,
+};
+
+type Key = keyof Settings;
+
+const SERIALISERS: { [K in Key]: (v: Settings[K]) => string } = {
+  language: (v) => v,
+  timezone: (v) => v,
+  currency: (v) => v,
+  groupJid: (v) => v,
+  commandPrefix: (v) => v,
+  paymentConfirmationMode: (v) => v,
+  allowCustomPlaces: (v) => (v ? '1' : '0'),
+  defaultCancelLimitHours: (v) => String(v),
+  allowPerBookingCancelLimit: (v) => (v ? '1' : '0'),
+  requirePaymentProof: (v) => (v ? '1' : '0'),
+  paymentDeadlineDays: (v) => String(v),
+  defaultDurationMin: (v) => String(v),
+  defaultMinPlayers: (v) => String(v),
+  defaultMaxPlayers: (v) => String(v),
+  reminderHoursBefore: (v) => String(v),
+  dataRetentionDays: (v) => String(v),
+};
+
+function parseValue<K extends Key>(key: K, raw: string): Settings[K] {
+  const fallback = DEFAULT_SETTINGS[key];
+  if (typeof fallback === 'boolean') return (raw === '1' || raw === 'true') as Settings[K];
+  if (typeof fallback === 'number') {
+    const n = Number(raw);
+    return (Number.isFinite(n) ? n : fallback) as Settings[K];
+  }
+  return raw as Settings[K];
+}
+
+/**
+ * Settings are read on nearly every message, so they are cached in-process and
+ * invalidated on write. The admin UI runs in the same process, so a single
+ * `invalidate()` on save is enough.
+ */
+let cache: Settings | null = null;
+
+export function getSettings(): Settings {
+  if (cache) return cache;
+
+  const rows = many<{ key: string; value: string }>('SELECT key, value FROM settings');
+  const result = { ...DEFAULT_SETTINGS };
+  for (const { key, value } of rows) {
+    if (key in DEFAULT_SETTINGS) {
+      const k = key as Key;
+      (result as Record<string, unknown>)[k] = parseValue(k, value);
+    }
+  }
+  cache = result;
+  return result;
+}
+
+export function getSetting<K extends Key>(key: K): Settings[K] {
+  return getSettings()[key];
+}
+
+export function setSetting<K extends Key>(key: K, value: Settings[K]): void {
+  const serialised = (SERIALISERS[key] as (v: Settings[K]) => string)(value);
+  run(
+    `INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    key,
+    serialised,
+    new Date().toISOString(),
+  );
+  invalidateSettings();
+}
+
+export function setSettings(patch: Partial<Settings>): void {
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined) continue;
+    setSetting(key as Key, value as never);
+  }
+}
+
+export function invalidateSettings(): void {
+  cache = null;
+}
+
+/** True once the admin has pointed the bot at a WhatsApp group. */
+export function isConfigured(): boolean {
+  return getSetting('groupJid').length > 0 && one('SELECT 1 AS x FROM users WHERE is_admin = 1') != null;
+}

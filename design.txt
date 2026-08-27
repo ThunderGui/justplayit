@@ -1,0 +1,88 @@
+I want to build this automated Whatsapp Bot.
+
+for testing it will run in a macbook pro m3 pro, and for my running version, inside a raspberry running HAOS. If i decide to rollout the go to market, i can evaluate other possibilities like cloud or dedicated hardware.
+
+The name of it is "Just Play It"
+
+Thinking backwards, the pain it has to solve is the following:
+	I have a Padel group on whatsapp of friends/colleagues.
+	We reserve and play on different clubs. Always someone normally has to pay the reservation upfront, and then share on the group. The people confirm that will play and after the game the 'payer' tells how much is per person and they transfer to him through normal transfer or paypal friends & family.
+	This is a little bit messy and overwhelms a person that is booking (financially and also time consuming).
+	
+	
+I thought about creating a BOT to solve the issue. You can also suggest some possibilities or extra features.
+
+#Functions
+
+-> list or calendar
+
+with this command, the user request the list of all the next bookings, availability, information like how many people confirmed (with link or button to add on calendar)
+
+-> 'include booking' and 'exclude booking'
+
+with this command the user adds or deletes a reservation. when added, must be specified the total cost of the reservation. Minimum recommended/expected paying players. Maximum players. Place (address), date and time of the reservation, court number/name (optional) and notes (optional). Also he must inform the late cancelation limit in hours (if not informed, the default configured by the admin (initially 24h) will be considered. 
+
+Only the creator of the booking can exclude a booking throught the whatsapp command. of course the bot admin can do this and everything through the webpage setup.
+
+I believe it should be easier to have an individual ID per booking (simple as possible to make it easiser for the users to type it) to manage the data in the back and front end
+
+-> waiting list 
+
+this should run on the background of the bot. whenever a player joins a booking that has already reached the maximum players, he enters the waiting list. if someone leaves, he receives a callout that he got the place.
+
+-> 'join' and 'leave'
+
+with this command a player can join or leave a booking. if leaving a booking in less than the late cancelation limit
+
+when joining, a link/button to add to calendar is also provided
+
+-> Payment
+
+-- confirm
+a player uses that (can be sent on the group or directly on the private chat with the bot. the bot must answer on the channel where it was requested) to confirm that a payment has been done.
+-- balance
+can be requested on the group or directly on the private chat with the bot. must be answered always privately. shows how much the user owns to each person, and how much each person owns to the user. if sent by admin, shows an overall balance.
+
+-> Setup
+
+the setup is the only thing i believe its better to run in a web interface and is only for the admin.
+
+Here the admin(s) should be able to setup:
+--Language (default english, but must have also German and Portuguese). The syntaxe/prompt of the commands can be kept in english to standardize the programming
+--Confirmation of the payments (here the admin sets up if the confirmation of the payment can be made only from who receives the payment, from both sender and receiver, or from everyone in the whatsapp group)
+--Whatsapp group, api keys, etc, to set up the stuff with whatsapp
+--List of places (here the admin can add the list of the places/clubs for the bookings)
+---Toggle if users can use a custom place/address if they are booking in a place not yet added by the admin, or only those already on the list
+--maximum last minute cancellation default (it starts with 24h, but the admin can change the default 'last minute cancellation without paying' limit)
+---toggle if the last minute cancellation limit can be changed individually by the creator of a booking or not
+-- Mandatory or not to send an attachment as 'proof' of the payment for the 'confirm' or not
+--deadline for payment
+define the deadline for pauyment after a game is played, it helps managing the balance. default should be 7 consecutive days after the game day
+
+-> Report bug, error or improvement suggestion
+self-explanatory 
+
+-> help
+Explain the commands and set-up rules of the bot (very objective)
+
+#Rules
+
+All the callouts have to be made iinside the whatsapp group so the players can follow.
+Only the individual payment requests should be made on private message, if the user sent that on private to the bot.
+
+No same time double reservations
+
+Leave a booking < than the late limit is possible, but payment is DUE (user must be informed to give a second confirmation when requests a late leave) IF a replacement player doesnt join after he leaves, OR if the min number of paying players is not reached.
+
+must follow datenschutz and GDPR
+
+it should run with API of whatsapp without consuming (this version that only acts when the user requests something)
+
+if necessary, local LLM shjould be ocnsidered (prefereably not, because i entend to run it in a docker together inside a raspberry running HAOS)
+
+The balance has to have a minimal intelligence. For example, if I create a booking for today, and player X is playing today, lets say he owns me 8 euros, and then he creates a booking for next week where i join and should pay him 10 euros, actually the balance should show only that i owe him 2 euros.
+
+
+#Business plan
+
+the first version is just for personal use, but i have the intention to transform it in a product to groups of people or sport clubs. i just want you to keep in mind so we developed it already 'preparing' for a module of payments to automate this part. On my personal use and the first version for 'groups of friends/colleagues', the payments are confirmed by the users themselves.

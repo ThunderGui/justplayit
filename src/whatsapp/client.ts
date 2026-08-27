@@ -1,0 +1,223 @@
+import { Boom } from '@hapi/boom';
+import {
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  isJidGroup,
+  makeCacheableSignalKeyStore,
+  makeWASocket,
+  useMultiFileAuthState,
+  type WASocket,
+  type proto,
+} from 'baileys';
+import fs from 'node:fs';
+import qrcode from 'qrcode-terminal';
+import { config } from '../config.js';
+import { logger } from '../util/logger.js';
+
+export interface IncomingMessage {
+  /** WhatsApp's message id, used to drop redeliveries. */
+  id: string;
+  chatId: string;
+  senderJid: string;
+  senderName: string | null;
+  text: string;
+  isGroup: boolean;
+  mentionedJids: string[];
+  /** Present when the message carried an image or document. */
+  hasMedia: boolean;
+  raw: proto.IWebMessageInfo;
+}
+
+export type MessageHandler = (message: IncomingMessage) => Promise<void>;
+
+export interface WhatsAppClient {
+  sendText(chatId: string, text: string, mentionJids?: string[]): Promise<void>;
+  downloadMedia(message: IncomingMessage): Promise<Buffer | null>;
+  /** Resolves a phone number to the JID WhatsApp actually uses for it. */
+  isConnected(): boolean;
+  listGroups(): Promise<{ id: string; subject: string }[]>;
+  logout(): Promise<void>;
+}
+
+/**
+ * Baileys speaks WhatsApp's multi-device protocol directly over a WebSocket —
+ * no Chromium, which is what makes this viable inside a container on a Pi.
+ *
+ * This is an unofficial client: the account is a normal WhatsApp account, so it
+ * is subject to WhatsApp's terms. The bot only ever replies to explicit
+ * commands, never sends unsolicited bulk messages.
+ */
+export async function startWhatsApp(onMessage: MessageHandler): Promise<WhatsAppClient> {
+  fs.mkdirSync(config.authDir, { recursive: true });
+
+  const { state, saveCreds } = await useMultiFileAuthState(config.authDir);
+  const { version } = await fetchLatestBaileysVersion();
+
+  let socket: WASocket | null = null;
+  let connected = false;
+  // Baileys tears the socket down on most errors; a fresh one is cheap.
+  let reconnectAttempts = 0;
+
+  const connect = (): void => {
+    socket = makeWASocket({
+      version,
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, logger as never),
+      },
+      // The bot answers commands; it does not need to look "online".
+      markOnlineOnConnect: false,
+      syncFullHistory: false,
+      logger: logger as never,
+      generateHighQualityLinkPreview: false,
+    });
+
+    socket.ev.on('creds.update', saveCreds);
+
+    socket.ev.on('connection.update', (update) => {
+      const { connection, lastDisconnect, qr } = update;
+
+      if (qr) {
+        logger.info('Scan this QR code in WhatsApp → Linked devices → Link a device');
+        qrcode.generate(qr, { small: true });
+      }
+
+      if (connection === 'open') {
+        connected = true;
+        reconnectAttempts = 0;
+        logger.info('connected to WhatsApp');
+      }
+
+      if (connection === 'close') {
+        connected = false;
+        const statusCode = (lastDisconnect?.error as Boom | undefined)?.output?.statusCode;
+        const loggedOut = statusCode === DisconnectReason.loggedOut;
+
+        if (loggedOut) {
+          // The credentials are dead; a human has to re-link the device.
+          logger.error(
+            'WhatsApp session logged out. Delete the auth folder and scan the QR code again.',
+          );
+          return;
+        }
+
+        // Exponential backoff, capped, so a long outage does not hammer the API.
+        const delay = Math.min(30_000, 2_000 * 2 ** reconnectAttempts);
+        reconnectAttempts++;
+        logger.warn({ statusCode, delay }, 'connection closed, reconnecting');
+        setTimeout(connect, delay);
+      }
+    });
+
+    socket.ev.on('messages.upsert', async ({ messages, type }) => {
+      // 'append' is history backfill; only 'notify' is a live message.
+      if (type !== 'notify') return;
+
+      for (const message of messages) {
+        try {
+          const parsed = toIncoming(message);
+          if (parsed) await onMessage(parsed);
+        } catch (err) {
+          logger.error({ err }, 'failed to handle incoming message');
+        }
+      }
+    });
+  };
+
+  connect();
+
+  return {
+    isConnected: () => connected,
+
+    async sendText(chatId, text, mentionJids) {
+      if (!socket) throw new Error('WhatsApp socket not ready');
+      await socket.sendMessage(chatId, {
+        text,
+        ...(mentionJids?.length ? { mentions: mentionJids } : {}),
+      });
+    },
+
+    async downloadMedia(message) {
+      if (!socket || !message.hasMedia) return null;
+      const { downloadMediaMessage } = await import('baileys');
+      try {
+        const buffer = await downloadMediaMessage(
+          message.raw,
+          'buffer',
+          {},
+          { logger: logger as never, reuploadRequest: socket.updateMediaMessage },
+        );
+        return buffer as Buffer;
+      } catch (err) {
+        logger.error({ err }, 'media download failed');
+        return null;
+      }
+    },
+
+    async listGroups() {
+      if (!socket) return [];
+      const groups = await socket.groupFetchAllParticipating();
+      return Object.values(groups).map((g) => ({ id: g.id, subject: g.subject ?? g.id }));
+    },
+
+    async logout() {
+      await socket?.logout();
+    },
+  };
+}
+
+/** Pulls the plain text out of the several shapes WhatsApp uses for it. */
+function extractText(message: proto.IWebMessageInfo): string {
+  const content = message.message;
+  if (!content) return '';
+
+  return (
+    content.conversation ??
+    content.extendedTextMessage?.text ??
+    content.imageMessage?.caption ??
+    content.videoMessage?.caption ??
+    content.documentMessage?.caption ??
+    content.buttonsResponseMessage?.selectedDisplayText ??
+    content.listResponseMessage?.title ??
+    ''
+  );
+}
+
+function extractMentions(message: proto.IWebMessageInfo): string[] {
+  const content = message.message;
+  return (
+    content?.extendedTextMessage?.contextInfo?.mentionedJid ??
+    content?.imageMessage?.contextInfo?.mentionedJid ??
+    []
+  );
+}
+
+function toIncoming(message: proto.IWebMessageInfo): IncomingMessage | null {
+  // Ignore our own messages, or we would answer ourselves in a loop.
+  if (message.key.fromMe) return null;
+
+  const chatId = message.key.remoteJid;
+  if (!chatId || chatId === 'status@broadcast') return null;
+
+  const text = extractText(message);
+  if (!text.trim()) return null;
+
+  const isGroup = isJidGroup(chatId) ?? false;
+  // In a group the author is `participant`; in a DM it is the chat itself.
+  const senderJid = (isGroup ? message.key.participant : chatId) ?? chatId;
+
+  const content = message.message;
+  const hasMedia = Boolean(content?.imageMessage || content?.documentMessage);
+
+  return {
+    id: message.key.id ?? '',
+    chatId,
+    senderJid,
+    senderName: message.pushName ?? null,
+    text,
+    isGroup,
+    mentionedJids: extractMentions(message),
+    hasMedia,
+    raw: message,
+  };
+}

@@ -1,0 +1,34 @@
+# Dependencies & build output
+node_modules/
+dist/
+
+# ---------------------------------------------------------------------------
+# Runtime data. NEVER commit this directory.
+#   data/wa-auth/  = WhatsApp device credentials. Anyone with these files can
+#                    send and read messages as the bot's account.
+#   data/*.db      = bookings, phone numbers and balances (personal data).
+#   data/media/    = payment proof screenshots.
+# ---------------------------------------------------------------------------
+data/
+tmp-smoke/
+*.db
+*.db-wal
+*.db-shm
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Logs & OS noise
+*.log
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# Local Claude Code config
+.claude/

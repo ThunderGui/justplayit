@@ -1,0 +1,36 @@
+services:
+  justplayit:
+    build: .
+    image: justplayit:latest
+    container_name: justplayit
+    restart: unless-stopped
+
+    # The QR code for linking the WhatsApp device is printed to the logs on
+    # first run, so the container needs a TTY to draw it:
+    #   docker compose logs -f justplayit
+    tty: true
+
+    env_file:
+      - .env
+
+    ports:
+      - "8080:8080"
+
+    volumes:
+      # Everything stateful: database, WhatsApp credentials, payment proofs.
+      - justplayit-data:/data
+
+    # Modest ceilings so the bot cannot starve everything else on a Pi.
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  justplayit-data:
