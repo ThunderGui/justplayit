@@ -137,11 +137,17 @@ export async function startWhatsApp(onMessage: MessageHandler): Promise<WhatsApp
     });
 
     socket.ev.on('messages.upsert', async ({ messages, type }) => {
-      // 'append' is history backfill; only 'notify' is a live message.
-      if (type !== 'notify') return;
+      // 'notify' is a live message. 'append' covers two different things:
+      // messages that arrived while the socket was down and are handed over on
+      // reconnect, and bulk history sync. Ignoring it wholesale meant every
+      // command sent during a connection blip was lost for good — but accepting
+      // it wholesale would replay weeks of old chat on first link. The age
+      // check separates the two.
+      if (type !== 'notify' && type !== 'append') return;
 
       for (const message of messages) {
         try {
+          if (!isRecent(message)) continue;
           const parsed = toIncoming(message);
           if (parsed) await onMessage(parsed);
         } catch (err) {
@@ -191,6 +197,42 @@ export async function startWhatsApp(onMessage: MessageHandler): Promise<WhatsApp
       await socket?.logout();
     },
   };
+}
+
+/**
+ * How far back a redelivered message may be and still be acted on. Long enough
+ * to cover a reconnect after a network drop, short enough that history sync
+ * never makes the bot answer a command from last week.
+ */
+export const CATCH_UP_WINDOW_MINUTES = 30;
+
+/**
+ * WhatsApp timestamps are seconds, and Baileys hands them over as a number or
+ * a Long depending on where they came from. A message with no usable timestamp
+ * is treated as live rather than discarded — better to answer twice than to
+ * ignore someone.
+ */
+export function isWithinCatchUpWindow(
+  timestamp: unknown,
+  nowMs: number = Date.now(),
+  windowMinutes: number = CATCH_UP_WINDOW_MINUTES,
+): boolean {
+  const raw =
+    typeof timestamp === 'number'
+      ? timestamp
+      : typeof timestamp === 'object' && timestamp !== null && 'toNumber' in timestamp
+        ? (timestamp as { toNumber(): number }).toNumber()
+        : Number(timestamp);
+
+  if (!Number.isFinite(raw) || raw <= 0) return true;
+
+  const ageMinutes = (nowMs / 1000 - raw) / 60;
+  // A clock slightly ahead of ours must not look like a message from the future.
+  return ageMinutes <= windowMinutes;
+}
+
+function isRecent(message: proto.IWebMessageInfo): boolean {
+  return isWithinCatchUpWindow(message.messageTimestamp);
 }
 
 /** Pulls the plain text out of the several shapes WhatsApp uses for it. */
