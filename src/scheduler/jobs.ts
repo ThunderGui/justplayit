@@ -8,6 +8,7 @@ import {
   listUpcoming,
   type Booking,
 } from '../domain/bookings.js';
+import { runDailyBackup } from '../domain/backup.js';
 import { balanceFor, settleBooking } from '../domain/ledger.js';
 import { purgeExpiredPending } from '../domain/pending.js';
 import { getSettings } from '../domain/settings.js';
@@ -183,6 +184,16 @@ export function runRetentionPurge(): { messages: number; pending: number } {
   return { messages, pending };
 }
 
+/**
+ * Daily snapshot of the database. Self-skipping, so calling it every minute
+ * costs one directory listing until the calendar day rolls over.
+ */
+export function runBackup(): ReturnType<typeof runDailyBackup> {
+  const keep = getSettings().backupKeepDays;
+  if (keep <= 0) return { status: 'skipped' };
+  return runDailyBackup(keep);
+}
+
 async function deliver(notifier: Notifier, message: OutgoingMessage): Promise<void> {
   if (message.target === 'dm' && message.userId != null) {
     await notifier.sendToUser(message.userId, message.text);
@@ -209,6 +220,7 @@ export function startScheduler(notifier: Notifier, intervalMs = 60_000): Schedul
       await runFillReminders(notifier);
       await runPaymentReminders(notifier);
       runRetentionPurge();
+      runBackup();
     } catch (err) {
       logger.error({ err }, 'scheduler pass failed');
     } finally {

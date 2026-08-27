@@ -29,6 +29,8 @@ export interface Settings {
   reminderHoursBefore: number;
   /** Retention window for message-processing records, in days (GDPR). */
   dataRetentionDays: number;
+  /** How many daily database snapshots to keep. 0 disables backups. */
+  backupKeepDays: number;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -48,6 +50,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultMaxPlayers: 4,
   reminderHoursBefore: 26,
   dataRetentionDays: 90,
+  backupKeepDays: 14,
 };
 
 type Key = keyof Settings;
@@ -69,6 +72,7 @@ const SERIALISERS: { [K in Key]: (v: Settings[K]) => string } = {
   defaultMaxPlayers: (v) => String(v),
   reminderHoursBefore: (v) => String(v),
   dataRetentionDays: (v) => String(v),
+  backupKeepDays: (v) => String(v),
 };
 
 function parseValue<K extends Key>(key: K, raw: string): Settings[K] {

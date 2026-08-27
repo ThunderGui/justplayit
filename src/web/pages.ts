@@ -1,3 +1,4 @@
+import type { BackupFile } from '../domain/backup.js';
 import {
   getRoster,
   listAllBookings,
@@ -389,6 +390,60 @@ export function reportsPage(
 }
 
 /* ------------------------------------------------------------------ */
+/* Backups                                                             */
+/* ------------------------------------------------------------------ */
+
+function humanSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export function backupsPage(files: BackupFile[]): string {
+  const keep = getSettings().backupKeepDays;
+
+  return `
+  <h1>Backups</h1>
+  <p class="sub">
+    One snapshot of the database per day, taken automatically and pruned to the
+    newest ${keep}. This is the only irreplaceable state the bot holds.
+  </p>
+
+  <div class="card">
+    ${
+      files.length === 0
+        ? '<div class="empty">No snapshots yet. The first one is taken within a minute of starting up.</div>'
+        : `<div class="table-wrap"><table>
+            <tr><th>Snapshot</th><th>Size</th><th>Taken</th><th></th></tr>
+            ${files
+              .map(
+                (f) => `<tr>
+              <td class="mono">${esc(f.name)}</td>
+              <td>${esc(humanSize(f.sizeBytes))}</td>
+              <td class="muted">${esc(when(f.createdAt))}</td>
+              <td><a class="btn secondary" href="/backups/${encodeURIComponent(f.name)}">Download</a></td>
+            </tr>`,
+              )
+              .join('')}
+          </table></div>`
+    }
+    <form method="post" action="/backups" style="margin-top:16px">
+      <button type="submit">Take a snapshot now</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">Restoring</h2>
+    <p class="muted" style="margin:0">
+      Stop the bot, replace <code>justplayit.db</code> in the data folder with a
+      downloaded snapshot (renaming it), and start it again. WhatsApp device
+      credentials are deliberately not included in snapshots — if you are moving
+      to new hardware, simply link the device again by scanning the QR code.
+    </p>
+  </div>`;
+}
+
+/* ------------------------------------------------------------------ */
 /* Settings                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -542,6 +597,19 @@ export function settingsPage(groups: { id: string; subject: string }[]): string 
           'Require a screenshot or receipt with every payment confirmation',
         )}
       </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0">Backups</h2>
+      <label for="backupKeepDays">Daily snapshots to keep
+        <span class="hint">
+          The bot writes one database snapshot per day to the data folder and deletes
+          older ones. Set to 0 to switch backups off.
+        </span>
+      </label>
+      <input type="number" id="backupKeepDays" name="backupKeepDays"
+             value="${s.backupKeepDays}" min="0" max="365" required>
+      <p class="muted" style="margin:10px 0 0"><a href="/backups">View and download snapshots →</a></p>
     </div>
 
     <div class="card">

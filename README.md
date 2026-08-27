@@ -71,13 +71,23 @@ Then:
    the admin, and that group becomes *the* group — the bot ignores every other
    chat from then on.
 
-### Docker (Raspberry Pi / HAOS)
+### Docker (laptop)
 
 ```bash
 cp .env.example .env      # set ADMIN_PASSWORD
 docker compose up -d --build
 docker compose logs -f    # the QR code appears here on first run
 ```
+
+### Home Assistant OS (Raspberry Pi)
+
+HAOS gives you no docker CLI, so `docker compose` is not an option there — the
+supported route is an add-on, which the `config.yaml` and `build.yaml` at the
+repo root make this project into. Copy the repository to `/addons/justplayit/`
+on the Pi and it appears under *Local add-ons*.
+
+Full instructions, including updates and restores, are in
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 There is no native module in the dependency tree, so the image builds on arm64
 without a compiler toolchain.
@@ -151,6 +161,16 @@ Cost splitting uses integer cents with the remainder distributed one cent at a
 time, so €40 across three players is €13.34 / €13.33 / €13.33 and never loses a
 cent.
 
+## Backups
+
+The bot snapshots its own database once a day and keeps the newest 14, pruning
+the rest. **Settings → Backups** in the console lists them, lets you download
+one, or take a snapshot on demand.
+
+WhatsApp credentials are deliberately excluded: re-linking is a QR scan, while
+dated copies of live session credentials on the same disk are a liability. The
+ledger is the irreplaceable part, and that is what is backed up.
+
 ## Configuration
 
 Everything below is set in the web console, not in code:
@@ -163,12 +183,13 @@ Everything below is set in the web console, not in code:
 - Whether payment proof is mandatory
 - Payment deadline after a game (default 7 days)
 - Retention window for message-deduplication records
+- How many daily database snapshots to keep
 
 ## Development
 
 ```bash
 npm run dev        # watch mode
-npm test           # 71 tests
+npm test           # 89 tests
 npm run typecheck
 ```
 
@@ -177,7 +198,8 @@ WhatsApp.
 
 The test suite covers the rules that are expensive to get wrong: debt netting,
 late-cancellation liability, cost splitting, double-booking, waiting-list
-promotion, and the channel rules (balances private, callouts in the group).
+promotion, the channel rules (balances private, callouts in the group), the
+unattended scheduler that creates real debts, and backup integrity.
 
 ## Privacy
 

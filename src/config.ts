@@ -1,6 +1,42 @@
 import 'dotenv/config';
+import fs from 'node:fs';
 import path from 'node:path';
 import { z } from 'zod';
+
+/**
+ * Home Assistant writes an add-on's configuration to /data/options.json rather
+ * than passing environment variables. Reading it here means the same image runs
+ * unchanged under `docker compose` (env vars) and as an HA add-on (options
+ * file), with no branching anywhere else in the codebase.
+ *
+ * Values found here win, because in an add-on the HA UI is the only place the
+ * user can set them.
+ */
+function applyHomeAssistantOptions(): void {
+  const optionsPath = process.env.HA_OPTIONS_PATH ?? '/data/options.json';
+  if (!fs.existsSync(optionsPath)) return;
+
+  const MAPPING: Record<string, string> = {
+    admin_password: 'ADMIN_PASSWORD',
+    session_secret: 'SESSION_SECRET',
+    web_port: 'WEB_PORT',
+    log_level: 'LOG_LEVEL',
+  };
+
+  try {
+    const raw = JSON.parse(fs.readFileSync(optionsPath, 'utf8')) as Record<string, unknown>;
+    for (const [key, envName] of Object.entries(MAPPING)) {
+      const value = raw[key];
+      // An empty string means "not set" in the HA options UI.
+      if (value === undefined || value === null || value === '') continue;
+      process.env[envName] = String(value);
+    }
+  } catch {
+    // A malformed options file must not stop the bot from booting with defaults.
+  }
+}
+
+applyHomeAssistantOptions();
 
 const schema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),

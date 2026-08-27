@@ -32,3 +32,6 @@ Thumbs.db
 
 # Local Claude Code config
 .claude/
+
+# Test scratch data
+tmp-test-data/

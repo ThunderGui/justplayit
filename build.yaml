@@ -1,0 +1,12 @@
+# Base images for the Home Assistant add-on builder.
+#
+# These are the official Node images rather than Home Assistant's Alpine bases,
+# because the bot needs Node 24 for the built-in `node:sqlite` module and the
+# Alpine releases HA builds on still ship Node 22.
+#
+# Only 64-bit targets are listed. A Raspberry Pi running HAOS is aarch64; 32-bit
+# armv7 is omitted rather than claimed, since Node 24 alpine images for it are
+# not something this project has verified.
+build_from:
+  aarch64: node:24-alpine
+  amd64: node:24-alpine

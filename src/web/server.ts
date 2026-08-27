@@ -4,6 +4,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import type { Server } from 'node:http';
 import { config } from '../config.js';
 import { many, run } from '../db/index.js';
+import { createBackup, listBackups, pruneBackups } from '../domain/backup.js';
 import {
   cancelBooking,
   findBookingById,
@@ -20,6 +21,7 @@ import { buildIcs } from '../util/calendar.js';
 import { logger } from '../util/logger.js';
 import { layout } from './layout.js';
 import {
+  backupsPage,
   bookingsPage,
   dashboardPage,
   loginPage,
@@ -279,6 +281,32 @@ export function createWebApp(deps: WebDeps) {
     res.redirect(result.ok ? '/?ok=' + encodeURIComponent('Payment updated.') : '/?err=Failed');
   });
 
+  app.get('/backups', (req, res) => {
+    send(res, backupsPage(listBackups()), {
+      title: 'Backups',
+      active: '/settings',
+      flash: flashFrom(req),
+    });
+  });
+
+  app.post('/backups', (_req, res) => {
+    const file = createBackup();
+    if (!file) return res.redirect('/backups?err=' + encodeURIComponent('Snapshot failed.'));
+    pruneBackups(Math.max(getSettings().backupKeepDays, 1));
+    res.redirect('/backups?ok=' + encodeURIComponent(`Snapshot ${file.name} written.`));
+  });
+
+  app.get('/backups/:name', (req, res) => {
+    // Resolve against the known list rather than joining user input onto a
+    // path, so a crafted name cannot escape the backup directory.
+    const file = listBackups().find((f) => f.name === String(req.params.name ?? ''));
+    if (!file) return res.status(404).type('text').send('Not found');
+
+    res.download(file.path, file.name, (err) => {
+      if (err) logger.error({ err, name: file.name }, 'backup download failed');
+    });
+  });
+
   app.get('/reports', (req, res) => {
     const reports = many<{
       id: number;
@@ -352,6 +380,7 @@ export function createWebApp(deps: WebDeps) {
       reminderHoursBefore: int('reminderHoursBefore', current.reminderHoursBefore, 0, 336),
       paymentDeadlineDays: int('paymentDeadlineDays', current.paymentDeadlineDays, 1, 90),
       dataRetentionDays: int('dataRetentionDays', current.dataRetentionDays, 1, 3650),
+      backupKeepDays: int('backupKeepDays', current.backupKeepDays, 0, 365),
       // Unchecked checkboxes are simply absent from the form body.
       allowPerBookingCancelLimit: body.allowPerBookingCancelLimit === '1',
       allowCustomPlaces: body.allowCustomPlaces === '1',
