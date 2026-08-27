@@ -67,12 +67,18 @@ export function bookingCard(booking: Booking, dict: Dict): string {
   lines.push(`${L.when}: ${formatDateTime(booking.starts_at, tz, lang)}`);
   if (booking.court) lines.push(`${L.court}: ${booking.court}`);
 
+  // Dividing by the players confirmed so far reads "€40.00 each" on a brand new
+  // booking, where the creator is the only one on the sheet — technically true,
+  // useless in practice, and alarming to read. The figure people actually want
+  // is the expected split: the minimum the group is planning for, or the real
+  // headcount once it grows past that.
+  const expectedPlayers = Math.max(confirmed.length, booking.min_players);
   lines.push(
-    `${L.cost}: ${formatMoney(booking.total_cost_cents, booking.currency)}` +
-      ` (${L.perPlayer.toLowerCase()} ~${formatMoney(
-        Math.round(booking.total_cost_cents / Math.max(confirmed.length, 1)),
-        booking.currency,
-      )})`,
+    `${L.cost}: ${formatMoney(booking.total_cost_cents, booking.currency)} · ` +
+      dict.payment.perPlayerEstimate(
+        formatMoney(Math.round(booking.total_cost_cents / expectedPlayers), booking.currency),
+        expectedPlayers,
+      ),
   );
 
   lines.push(
@@ -132,7 +138,9 @@ export function bookingList(bookings: Booking[], dict: Dict): string {
     if (isExternal(booking)) {
       const provider = booking.external_provider ?? 'external';
       out.push(`*${booking.code}* ${time} · ${placeLabel(booking)} · _${provider}_`);
+      out.push(...venueLines(booking, dict));
       out.push(`   ${booking.external_url}`);
+      if (booking.notes) out.push(`   ${dict.label.notes}: ${booking.notes}`);
       continue;
     }
 
@@ -145,9 +153,40 @@ export function bookingList(bookings: Booking[], dict: Dict): string {
       `*${booking.code}* ${time} · ${placeLabel(booking)} · ${status}${waiting}` +
         ` · ${formatMoney(booking.total_cost_cents, booking.currency)}`,
     );
+
+    out.push(...venueLines(booking, dict));
+
+    // Who is actually in. Comma-separated rather than bulleted, so a list of
+    // several games stays scannable in a busy group chat.
+    out.push(
+      count > 0
+        ? `   ${roster.confirmed.map((p) => displayName(findUserById(p.user_id))).join(', ')}`
+        : `   _${dict.label.nobodyYet}_`,
+    );
+
+    if (booking.notes) out.push(`   ${dict.label.notes}: ${booking.notes}`);
   }
 
   return out.join('\n');
+}
+
+/**
+ * Court and address for a list entry, as a single indented line. Returns
+ * nothing when there is neither, so no empty line is emitted.
+ *
+ * The address is skipped when it is the same text as the venue name — which is
+ * the case for a free-text place, where the two are literally one field — so
+ * the line never repeats what the row above already says.
+ */
+function venueLines(booking: Booking, dict: Dict): string[] {
+  const parts: string[] = [];
+
+  if (booking.court) parts.push(`${dict.label.court} ${booking.court}`);
+
+  const address = placeAddress(booking);
+  if (address && address !== placeLabel(booking)) parts.push(address);
+
+  return parts.length > 0 ? [`   ${parts.join(' · ')}`] : [];
 }
 
 export function balanceCard(balances: PairBalance[], dict: Dict, currency: string): string {

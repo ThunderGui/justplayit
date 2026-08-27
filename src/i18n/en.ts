@@ -126,6 +126,9 @@ export const en = {
     overallHeader: 'Group balance',
     suggestedTransfers: 'Simplest way to settle everything',
     transfer: (from: string, to: string, amount: string) => `${from} → ${to}: ${amount}`,
+    /** Expected split on a booking card, e.g. "~€10.00 each at 4 players". */
+    perPlayerEstimate: (amount: string, players: number) =>
+      `~${amount} each at ${players} players`,
 
     recorded: (from: string, to: string, amount: string) =>
       `Payment recorded: ${from} → ${to}, ${amount}.`,

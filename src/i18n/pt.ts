@@ -121,6 +121,8 @@ export const pt: Dict = {
     overallHeader: 'Saldo do grupo',
     suggestedTransfers: 'Forma mais simples de acertar tudo',
     transfer: (from: string, to: string, amount: string) => `${from} → ${to}: ${amount}`,
+    perPlayerEstimate: (amount: string, players: number) =>
+      `~${amount} por jogador com ${players} jogadores`,
 
     recorded: (from: string, to: string, amount: string) =>
       `Pagamento registado: ${from} → ${to}, ${amount}.`,
