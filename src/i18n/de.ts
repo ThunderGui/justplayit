@@ -45,7 +45,8 @@ export const de: Dict = {
     usage: (usage: string) => `Verwendung: ${usage}`,
     noSuchUser: 'Diese Person kenne ich noch nicht. Sie muss zuerst einmal in die Gruppe schreiben.',
     ambiguousUser: (names: string[]) =>
-      `Mehrere Personen passen darauf: ${names.join(', ')}. Bitte genauer angeben.`,
+      `Mehrere Personen passen darauf: ${names.join(', ')}.\n` +
+      'Markiere die Person stattdessen mit @, oder schreib den Namen genau wie oben.',
     confirmYesNo: 'Antworte mit JA zum Bestätigen, mit allem anderen zum Abbrechen.',
     cancelled: 'Abgebrochen — es wurde nichts geändert.',
     nothingPending: 'Es wartet nichts auf deine Bestätigung.',

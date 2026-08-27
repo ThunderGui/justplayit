@@ -47,6 +47,8 @@ export function upsertUser(waId: string, displayName?: string | null): User {
   if (existing) {
     if (displayName && displayName !== existing.display_name && !existing.anonymised_at) {
       run('UPDATE users SET display_name = ? WHERE id = ?', displayName, existing.id);
+      // A rename can create or resolve a collision.
+      invalidateNameCache();
       return { ...existing, display_name: displayName };
     }
     return existing;
@@ -62,6 +64,7 @@ export function upsertUser(waId: string, displayName?: string | null): User {
     isFirstUser ? 1 : 0,
     nowIso(),
   );
+  invalidateNameCache();
   return findUserById(lastInsertRowid)!;
 }
 
@@ -93,11 +96,55 @@ export function languageFor(user: User | undefined): Lang {
   return user?.language ?? getSetting('language');
 }
 
-/** Short label used in group messages. Falls back to a masked phone. */
+/**
+ * Names that more than one active user shares. Cached because it is consulted
+ * for every name rendered, and invalidated whenever a user is added, renamed or
+ * erased — the only things that can change the answer.
+ */
+let duplicateNames: Set<string> | null = null;
+
+function duplicateNameSet(): Set<string> {
+  if (duplicateNames) return duplicateNames;
+
+  const rows = many<{ name: string }>(
+    `SELECT LOWER(TRIM(display_name)) AS name
+       FROM users
+      WHERE display_name IS NOT NULL AND TRIM(display_name) <> '' AND anonymised_at IS NULL
+      GROUP BY LOWER(TRIM(display_name))
+      HAVING COUNT(*) > 1`,
+  );
+
+  duplicateNames = new Set(rows.map((r) => r.name));
+  return duplicateNames;
+}
+
+export function invalidateNameCache(): void {
+  duplicateNames = null;
+}
+
+/** The bracketed tail that tells two same-named people apart. */
+export function nameSuffix(user: User): string {
+  return user.phone ? `…${user.phone.slice(-4)}` : `#${user.id}`;
+}
+
+/**
+ * Short label used in group messages. Falls back to a masked phone.
+ *
+ * When two people in the group share a name — likely, since WhatsApp push names
+ * are often just a first name — the label gains the last digits of their number
+ * so a roster or a balance is never two identical lines. Unique names are left
+ * completely alone, which is the overwhelmingly common case.
+ */
 export function displayName(user: User | undefined): string {
   if (!user) return 'someone';
   if (user.anonymised_at) return 'deleted user';
-  if (user.display_name) return user.display_name;
+
+  if (user.display_name) {
+    const name = user.display_name.trim();
+    if (!duplicateNameSet().has(name.toLowerCase())) return name;
+    return `${name} (${nameSuffix(user)})`;
+  }
+
   if (user.phone) return `…${user.phone.slice(-4)}`;
   return `user ${user.id}`;
 }
@@ -120,4 +167,6 @@ export function anonymiseUser(userId: number): void {
     userId,
   );
   run('DELETE FROM pending_actions WHERE user_id = ?', userId);
+  // Erasing one of two same-named people makes the other unique again.
+  invalidateNameCache();
 }

@@ -879,15 +879,38 @@ function toPositiveInt(value: string | undefined): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
+/**
+ * Resolves a typed name to users. Accepts the disambiguating tail that
+ * `displayName` adds when two people share a name, so "Daniel G (…0003)" can be
+ * copied straight out of a message the bot just sent.
+ *
+ * The tail is only read when it is bracketed or ellipsis-prefixed. A bare run of
+ * digits is left alone: `!confirm Daniel 10` means ten euros, not a phone
+ * fragment, and a name like "Daniel 2" must not be mistaken for one either.
+ */
 function matchUsersByName(query: string, excludeUserId: number): User[] {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return [];
-  return listUsers().filter(
+  const raw = query.trim().toLowerCase();
+  if (!raw) return [];
+
+  const tail = raw.match(/(?:…|\()\s*#?(\d{2,})\s*\)?/);
+  const digits = tail?.[1] ?? null;
+  const namePart = (tail ? raw.replace(tail[0], ' ') : raw).replace(/[()…#]/g, '').trim();
+
+  const candidates = listUsers().filter(
     (u) =>
       u.id !== excludeUserId &&
       !u.anonymised_at &&
-      (u.display_name ?? '').toLowerCase().includes(needle),
+      (namePart === '' || (u.display_name ?? '').toLowerCase().includes(namePart)),
   );
+
+  if (!digits) return candidates;
+
+  const narrowed = candidates.filter(
+    (u) => (u.phone ?? '').endsWith(digits) || String(u.id) === digits,
+  );
+  // Fall back to the name match if the tail matched nobody, rather than
+  // reporting "no such user" for a name that plainly exists.
+  return narrowed.length > 0 ? narrowed : candidates;
 }
 
 function resolveBookingPlace(

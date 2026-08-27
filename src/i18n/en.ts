@@ -47,7 +47,8 @@ export const en = {
     usage: (usage: string) => `Usage: ${usage}`,
     noSuchUser: 'I do not know that person yet. They need to send a message to this group first.',
     ambiguousUser: (names: string[]) =>
-      `Several people match that name: ${names.join(', ')}. Please be more specific.`,
+      `Several people match that name: ${names.join(', ')}.\n` +
+      'Tag them with @ instead, or repeat the name exactly as written above.',
     confirmYesNo: 'Reply YES to confirm, or anything else to cancel.',
     cancelled: 'Cancelled — nothing was changed.',
     nothingPending: 'You have nothing waiting for confirmation.',
