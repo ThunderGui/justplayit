@@ -153,6 +153,15 @@ export const pt: Dict = {
       'O administrador exige comprovativo de pagamento. Envia a captura de ecrã ou o recibo junto com o comando.',
     selfPayment: 'Não te podes pagar a ti próprio.',
     invalidAmount: 'Esse valor não parece certo.',
+    remindDebtor: (creditor: string, amount: string, prefix: string) =>
+      `👋 Um lembrete: deves ${amount} a ${creditor}.\n` +
+      `Quando pagares, envia ${prefix}confirm ${creditor} para acertar o saldo.`,
+    remindNobodyOwes: 'Ninguém te deve nada neste momento. 🎉',
+    remindSent: (count: number, total: string) =>
+      `${count} ${count === 1 ? 'pessoa avisada' : 'pessoas avisadas'} — ${total} em aberto no total.`,
+    remindSkipped: (names: string) => `Já avisados há pouco, por isso ficaram de fora: ${names}`,
+    remindAllOnCooldown: (hours: number) =>
+      `Toda a gente que te deve já foi avisada no último dia. Tenta outra vez daqui a cerca de ${hours}h.`,
     deadlineReminder: (amount: string, to: string, days: number) =>
       `Lembrete: ainda deves ${amount} a ${to}. O prazo de pagamento do grupo é daqui a ${days} dia(s).`,
   },

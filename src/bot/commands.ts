@@ -16,6 +16,7 @@ import {
 import { balanceFor, overallBalances, settleBooking, simplifyDebts } from '../domain/ledger.js';
 import { approveClaim, claimPayment, rejectClaim } from '../domain/payments.js';
 import { setPending, takePending } from '../domain/pending.js';
+import { cooldownRemainingHours, pendingReminders, recordReminder } from '../domain/reminders.js';
 import { listPlaces, resolvePlace } from '../domain/places.js';
 import type { Settings } from '../domain/settings.js';
 import { getSettings } from '../domain/settings.js';
@@ -115,6 +116,8 @@ export function handleCommand(cmd: ParsedCommand, ctx: CommandContext): Outgoing
       return handleApproveReject(cmd, ctx, 'reject');
     case 'balance':
       return handleBalance(ctx);
+    case 'remind':
+      return handleRemind(cmd, ctx);
     case 'settle':
       return handleSettle(cmd, ctx);
     case 'report':
@@ -757,6 +760,84 @@ function handleBalance(ctx: CommandContext): OutgoingMessage[] {
   if (ctx.isGroup) messages.push(reply(dict.common.sentPrivately));
 
   return messages;
+}
+
+/* ------------------------------------------------------------------ */
+/* remind                                                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Nudges everyone who owes the sender. Each nudge is a private message to the
+ * debtor — a public list of who has not paid is precisely the awkwardness this
+ * bot exists to remove — and the summary goes back privately for the same
+ * reason, even when the command was typed in the group.
+ */
+function handleRemind(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] {
+  const { dict, settings } = ctx;
+
+  // An optional target: `remind @someone` or `remind Daniel`.
+  let onlyUserId = ctx.mentionedUserIds[0];
+  const nameGuess = cmd.args.filter((a) => !a.startsWith('@')).join(' ').trim();
+  if (onlyUserId == null && nameGuess) {
+    const matched = matchUsersByName(nameGuess, ctx.user.id);
+    if (matched.length === 1) onlyUserId = matched[0]!.id;
+    else if (matched.length > 1) {
+      return [privateReply(ctx, dict.common.ambiguousUser(matched.map((u) => displayName(u))))];
+    } else {
+      return [privateReply(ctx, dict.common.noSuchUser)];
+    }
+  }
+
+  const { due, onCooldown } = pendingReminders(ctx.user.id, onlyUserId);
+
+  if (due.length === 0) {
+    const text =
+      onCooldown.length > 0
+        ? dict.payment.remindAllOnCooldown(
+            Math.max(...onCooldown.map((t) => cooldownRemainingHours(t.lastRemindedAt!))),
+          )
+        : dict.payment.remindNobodyOwes;
+    return withGroupAck(ctx, [toDm(ctx.user.id, text)]);
+  }
+
+  const messages: OutgoingMessage[] = [];
+  let total = 0;
+
+  // Re-read the sender: an admin may have set their payment details in the web
+  // console since this message's user record was loaded.
+  const me = findUserById(ctx.user.id) ?? ctx.user;
+
+  for (const target of due) {
+    messages.push(
+      toDm(
+        target.userId,
+        `${dict.payment.remindDebtor(
+          displayName(me),
+          formatMoney(target.cents, settings.currency),
+          settings.commandPrefix,
+        )}${me.payment_handle ? `\n${dict.settlement.payHandle(me.payment_handle)}` : ''}`,
+      ),
+    );
+    recordReminder(ctx.user.id, target.userId, target.cents);
+    total += target.cents;
+  }
+
+  const summary = [dict.payment.remindSent(due.length, formatMoney(total, settings.currency))];
+  if (onCooldown.length > 0) {
+    summary.push(
+      dict.payment.remindSkipped(
+        onCooldown.map((t) => displayName(findUserById(t.userId))).join(', '),
+      ),
+    );
+  }
+
+  messages.push(toDm(ctx.user.id, summary.join('\n')));
+  return withGroupAck(ctx, messages);
+}
+
+/** Adds a content-free acknowledgement when a private answer was asked for publicly. */
+function withGroupAck(ctx: CommandContext, messages: OutgoingMessage[]): OutgoingMessage[] {
+  return ctx.isGroup ? [...messages, reply(ctx.dict.common.sentPrivately)] : messages;
 }
 
 /* ------------------------------------------------------------------ */

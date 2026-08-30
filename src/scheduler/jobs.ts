@@ -9,7 +9,7 @@ import {
   type Booking,
 } from '../domain/bookings.js';
 import { runDailyBackup } from '../domain/backup.js';
-import { balanceFor, settleBooking } from '../domain/ledger.js';
+import { balanceFor, settleBooking, type SettlementLine } from '../domain/ledger.js';
 import { purgeExpiredPending } from '../domain/pending.js';
 import { getSettings } from '../domain/settings.js';
 import { displayName, findUserById } from '../domain/users.js';
@@ -26,17 +26,16 @@ export interface Notifier {
   sendToUser(userId: number, text: string): Promise<void>;
 }
 
-/** Marks a one-off job as done so reminders never fire twice. */
-function claimJob(kind: string, bookingId: number | null): boolean {
-  const existing = one(
-    'SELECT 1 AS x FROM scheduled_jobs WHERE kind = ? AND booking_id IS ?',
-    kind,
-    bookingId,
+function jobExists(kind: string, bookingId: number | null): boolean {
+  return (
+    one('SELECT 1 AS x FROM scheduled_jobs WHERE kind = ? AND booking_id IS ?', kind, bookingId) !=
+    null
   );
-  if (existing) return false;
+}
 
+function recordJob(kind: string, bookingId: number | null): void {
   run(
-    `INSERT INTO scheduled_jobs (kind, booking_id, due_at, done_at, created_at)
+    `INSERT OR IGNORE INTO scheduled_jobs (kind, booking_id, due_at, done_at, created_at)
      VALUES (?, ?, ?, ?, ?)`,
     kind,
     bookingId,
@@ -44,6 +43,12 @@ function claimJob(kind: string, bookingId: number | null): boolean {
     nowIso(),
     nowIso(),
   );
+}
+
+/** Marks a one-off job as done so reminders never fire twice. */
+function claimJob(kind: string, bookingId: number | null): boolean {
+  if (jobExists(kind, bookingId)) return false;
+  recordJob(kind, bookingId);
   return true;
 }
 
@@ -77,14 +82,110 @@ export async function runAutoSettlement(notifier: Notifier): Promise<number> {
       continue;
     }
 
-    for (const message of settlementMessages(result.booking, result.lines, dict, settings)) {
-      await deliver(notifier, message);
-    }
     settled++;
     logger.info({ code: booking.code }, 'auto-settled booking');
   }
 
+  // Announcing is deliberately not done here. Writing the debts and telling
+  // people about them are separate concerns, and coupling them means a dropped
+  // WhatsApp socket leaves money owed that nobody was ever told about.
+  await runSettlementAnnouncements(notifier);
+
   return settled;
+}
+
+/**
+ * Rebuilds the split from the ledger so a settlement can be announced later
+ * than it was recorded. Charges are what each player owes; whatever they do not
+ * cover is the payer's own share, which never becomes a charge because they
+ * already handed the money to the club.
+ */
+function settlementLinesFor(booking: Booking): SettlementLine[] {
+  const charges = many<{ from_user_id: number; amount_cents: number }>(
+    `SELECT from_user_id, SUM(amount_cents) AS amount_cents
+       FROM ledger_entries
+      WHERE booking_id = ? AND kind = 'CHARGE'
+      GROUP BY from_user_id`,
+    booking.id,
+  );
+
+  // No charges means nobody owes anybody: a game nobody joined, or one the
+  // payer played alone. There is no split to announce.
+  if (charges.length === 0) return [];
+
+  const lateIds = new Set(
+    many<{ user_id: number }>(
+      `SELECT user_id FROM participants WHERE booking_id = ? AND status = 'LEFT_LATE'`,
+      booking.id,
+    ).map((r) => r.user_id),
+  );
+
+  const lines: SettlementLine[] = charges.map((c) => ({
+    userId: c.from_user_id,
+    amountCents: c.amount_cents,
+    lateCancellation: lateIds.has(c.from_user_id),
+  }));
+
+  const charged = charges.reduce((sum, c) => sum + c.amount_cents, 0);
+  const payerShare = booking.total_cost_cents - charged;
+  if (payerShare > 0) {
+    lines.push({
+      userId: booking.payer_id,
+      amountCents: payerShare,
+      lateCancellation: lateIds.has(booking.payer_id),
+    });
+  }
+
+  return lines;
+}
+
+/**
+ * Announces every settled booking the group has not been told about yet, and
+ * keeps retrying across ticks until the message actually goes out. The job row
+ * is written only after a successful send, so a failure leaves the work
+ * outstanding rather than losing it.
+ */
+export async function runSettlementAnnouncements(notifier: Notifier): Promise<number> {
+  const settings = getSettings();
+  const dict = t(settings.language);
+
+  const pending = many<Booking>(
+    `SELECT b.* FROM bookings b
+      WHERE b.status = 'SETTLED' AND b.kind = 'MANAGED' AND b.settled_at IS NOT NULL
+        AND NOT EXISTS (
+          SELECT 1 FROM scheduled_jobs j
+           WHERE j.kind = 'SETTLEMENT_ANNOUNCED' AND j.booking_id = b.id
+        )
+      ORDER BY b.settled_at`,
+  );
+
+  let sent = 0;
+
+  for (const booking of pending) {
+    const lines = settlementLinesFor(booking);
+
+    // A booking nobody played produces no split; there is nothing to say.
+    if (lines.length === 0) {
+      recordJob('SETTLEMENT_ANNOUNCED', booking.id);
+      continue;
+    }
+
+    try {
+      for (const message of settlementMessages(booking, lines, dict, settings)) {
+        await deliver(notifier, message);
+      }
+      recordJob('SETTLEMENT_ANNOUNCED', booking.id);
+      sent++;
+      logger.info({ code: booking.code }, 'announced settlement');
+    } catch (err) {
+      // Almost always a closed socket. Stop for this pass rather than hammering
+      // a dead connection; the next tick tries again.
+      logger.error({ err, code: booking.code }, 'could not announce settlement, will retry');
+      break;
+    }
+  }
+
+  return sent;
 }
 
 /** Nudges the group about a game that is close and still short of players. */
@@ -215,14 +316,25 @@ export function startScheduler(notifier: Notifier, intervalMs = 60_000): Schedul
     // A slow pass must never overlap the next one.
     if (running) return;
     running = true;
+
+    // Each task is isolated: a dropped WhatsApp socket while announcing a
+    // settlement must not also skip the backup and the retention purge, which
+    // is exactly what a single try/catch around the whole pass did.
+    const safely = async (task: string, fn: () => Promise<unknown> | unknown): Promise<void> => {
+      try {
+        await fn();
+      } catch (err) {
+        logger.error({ err, task }, 'scheduler task failed');
+      }
+    };
+
     try {
-      await runAutoSettlement(notifier);
-      await runFillReminders(notifier);
-      await runPaymentReminders(notifier);
-      runRetentionPurge();
-      runBackup();
-    } catch (err) {
-      logger.error({ err }, 'scheduler pass failed');
+      await safely('autoSettlement', () => runAutoSettlement(notifier));
+      await safely('settlementAnnouncements', () => runSettlementAnnouncements(notifier));
+      await safely('fillReminders', () => runFillReminders(notifier));
+      await safely('paymentReminders', () => runPaymentReminders(notifier));
+      await safely('retentionPurge', () => runRetentionPurge());
+      await safely('backup', () => runBackup());
     } finally {
       running = false;
     }

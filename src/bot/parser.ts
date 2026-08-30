@@ -16,6 +16,7 @@ export type CommandName =
   | 'approve'
   | 'reject'
   | 'balance'
+  | 'remind'
   | 'settle'
   | 'report'
   | 'privacy'
@@ -52,6 +53,8 @@ const ALIASES: Record<string, CommandName> = {
   reject: 'reject', deny: 'reject', dispute: 'reject',
 
   balance: 'balance', owe: 'balance', debts: 'balance', saldo: 'balance',
+
+  remind: 'remind', nudge: 'remind', chase: 'remind', 'remind all': 'remind',
 
   settle: 'settle', close: 'settle',
 

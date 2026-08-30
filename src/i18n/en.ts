@@ -160,6 +160,16 @@ export const en = {
       'The admin requires proof of payment. Please send the screenshot or receipt together with the command.',
     selfPayment: 'You cannot pay yourself.',
     invalidAmount: 'That amount does not look right.',
+    /** The private nudge the debtor receives. */
+    remindDebtor: (creditor: string, amount: string, prefix: string) =>
+      `👋 A friendly reminder: you owe ${creditor} ${amount}.\n` +
+      `Once you have paid, send ${prefix}confirm ${creditor} so the balance is cleared.`,
+    remindNobodyOwes: 'Nobody owes you anything right now. 🎉',
+    remindSent: (count: number, total: string) =>
+      `Reminded ${count} ${count === 1 ? 'person' : 'people'} — ${total} outstanding in total.`,
+    remindSkipped: (names: string) => `Already reminded recently, so left alone: ${names}`,
+    remindAllOnCooldown: (hours: number) =>
+      `Everyone who owes you was reminded in the last day already. Try again in about ${hours}h.`,
     deadlineReminder: (amount: string, to: string, days: number) =>
       `Reminder: you still owe ${to} ${amount}. The group's payment deadline is in ${days} day(s).`,
   },

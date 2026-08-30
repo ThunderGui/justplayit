@@ -228,4 +228,23 @@ export const MIGRATIONS: Migration[] = [
     CREATE INDEX idx_claims_approver ON payment_claims(approver_user_id, status);
     `,
   },
+  {
+    id: 3,
+    name: 'payment_reminders',
+    up: `
+    /* Records each nudge a creditor sends a debtor, purely so the same person
+       cannot be reminded again and again. Chasing people is the job this bot
+       exists to take over, and a chase button with no limit is a harassment
+       button. */
+    CREATE TABLE payment_reminders (
+      id            INTEGER PRIMARY KEY,
+      from_user_id  INTEGER NOT NULL REFERENCES users(id),  -- who is owed
+      to_user_id    INTEGER NOT NULL REFERENCES users(id),  -- who owes
+      amount_cents  INTEGER NOT NULL,
+      sent_at       TEXT NOT NULL,
+      CHECK (from_user_id <> to_user_id)
+    );
+    CREATE INDEX idx_reminders_pair ON payment_reminders(from_user_id, to_user_id, sent_at);
+    `,
+  },
 ];

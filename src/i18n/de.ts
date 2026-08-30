@@ -153,6 +153,15 @@ export const de: Dict = {
       'Der Admin verlangt einen Zahlungsnachweis. Bitte schick den Screenshot oder Beleg zusammen mit dem Befehl.',
     selfPayment: 'Du kannst dich nicht selbst bezahlen.',
     invalidAmount: 'Dieser Betrag sieht nicht richtig aus.',
+    remindDebtor: (creditor: string, amount: string, prefix: string) =>
+      `👋 Kleine Erinnerung: Du schuldest ${creditor} ${amount}.\n` +
+      `Wenn du bezahlt hast, schick ${prefix}confirm ${creditor}, damit der Saldo ausgeglichen wird.`,
+    remindNobodyOwes: 'Dir schuldet gerade niemand etwas. 🎉',
+    remindSent: (count: number, total: string) =>
+      `${count} ${count === 1 ? 'Person' : 'Personen'} erinnert — insgesamt ${total} offen.`,
+    remindSkipped: (names: string) => `Kürzlich schon erinnert, deshalb ausgelassen: ${names}`,
+    remindAllOnCooldown: (hours: number) =>
+      `Alle, die dir etwas schulden, wurden im letzten Tag schon erinnert. Versuch es in etwa ${hours}h nochmal.`,
     deadlineReminder: (amount: string, to: string, days: number) =>
       `Erinnerung: Du schuldest ${to} noch ${amount}. Die Zahlungsfrist der Gruppe ist in ${days} Tag(en).`,
   },

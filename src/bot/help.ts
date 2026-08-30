@@ -17,6 +17,7 @@ export function helpText(dict: Dict, settings: Settings, isAdmin: boolean): stri
     `${p}leave <id> — give up your spot`,
     `${p}balance — who owes whom (always answered privately)`,
     `${p}confirm <name> [amount] — record that you paid someone`,
+    `${p}remind [name] — privately nudge whoever owes you`,
     `${p}report <text> — report a bug or suggest an improvement`,
     `${p}help — this message`,
     '',
