@@ -189,7 +189,12 @@ function venueLines(booking: Booking, dict: Dict): string[] {
   return parts.length > 0 ? [`   ${parts.join(' · ')}`] : [];
 }
 
-export function balanceCard(balances: PairBalance[], dict: Dict, currency: string): string {
+export function balanceCard(
+  balances: PairBalance[],
+  dict: Dict,
+  currency: string,
+  prefix: string = getSettings().commandPrefix,
+): string {
   if (balances.length === 0) return dict.payment.balanceAllClear;
 
   const owed = balances.filter((b) => b.cents > 0); // I owe them
@@ -217,6 +222,10 @@ export function balanceCard(balances: PairBalance[], dict: Dict, currency: strin
     if (owedToMe.length > 1) {
       lines.push(`  ${dict.payment.totalOwedToYou(formatMoney(total, currency))}`);
     }
+
+    // Only worth mentioning when there is actually someone to chase; on a
+    // balance where you only owe, it would be noise.
+    lines.push('', dict.payment.remindHint(prefix));
   }
 
   return lines.join('\n');

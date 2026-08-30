@@ -157,6 +157,8 @@ export const pt: Dict = {
       `👋 Um lembrete: deves ${amount} a ${creditor}.\n` +
       `Quando pagares, envia ${prefix}confirm ${creditor} para acertar o saldo.`,
     remindNobodyOwes: 'Ninguém te deve nada neste momento. 🎉',
+    remindHint: (prefix: string) =>
+      `Envia ${prefix}remind para avisares em privado quem te deve.`,
     remindSent: (count: number, total: string) =>
       `${count} ${count === 1 ? 'pessoa avisada' : 'pessoas avisadas'} — ${total} em aberto no total.`,
     remindSkipped: (names: string) => `Já avisados há pouco, por isso ficaram de fora: ${names}`,

@@ -153,3 +153,37 @@ describe('remind', () => {
     }
   });
 });
+
+describe('the balance points at remind when there is money to collect', () => {
+  it('mentions the command when someone owes you', () => {
+    const { alice } = owedByTwo();
+    const balance = send('!balance', alice)[0]!.text;
+
+    expect(balance).toContain('owes you');
+    expect(balance).toContain('!remind');
+  });
+
+  it('uses the configured prefix in the hint', () => {
+    setSettings({ commandPrefix: '.' });
+    const { alice } = owedByTwo();
+    expect(send('.balance', alice)[0]!.text).toContain('.remind');
+  });
+
+  it('stays quiet when you only owe money', () => {
+    // Bob owes Alice, so Bob's balance has nothing to chase.
+    const alice = user('Alice');
+    const bob = user('Bob');
+    const b = booking(alice, { totalCostCents: 2000, minPlayers: 2, maxPlayers: 2 });
+    joinBooking(b.code, bob);
+    settleBooking(b.id);
+
+    const balance = send('!balance', bob)[0]!.text;
+    expect(balance).toContain('You owe');
+    expect(balance).not.toContain('remind');
+  });
+
+  it('stays quiet when everything is settled', () => {
+    const alice = user('Alice');
+    expect(send('!balance', alice)[0]!.text).not.toContain('remind');
+  });
+});

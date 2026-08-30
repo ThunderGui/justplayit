@@ -165,6 +165,9 @@ export const en = {
       `👋 A friendly reminder: you owe ${creditor} ${amount}.\n` +
       `Once you have paid, send ${prefix}confirm ${creditor} so the balance is cleared.`,
     remindNobodyOwes: 'Nobody owes you anything right now. 🎉',
+    /** Shown under a balance that has money coming in, so the command is findable. */
+    remindHint: (prefix: string) =>
+      `Send ${prefix}remind to privately nudge whoever owes you.`,
     remindSent: (count: number, total: string) =>
       `Reminded ${count} ${count === 1 ? 'person' : 'people'} — ${total} outstanding in total.`,
     remindSkipped: (names: string) => `Already reminded recently, so left alone: ${names}`,
