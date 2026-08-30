@@ -1,12 +1,15 @@
 import crypto from 'node:crypto';
 import cookieParser from 'cookie-parser';
+import { DateTime } from 'luxon';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import type { Server } from 'node:http';
 import { config } from '../config.js';
 import { many, run } from '../db/index.js';
 import { createBackup, listBackups, pruneBackups } from '../domain/backup.js';
 import {
+  affectedUserIds,
   cancelBooking,
+  editBooking,
   findBookingById,
   findBookingByCode,
   placeAddress,
@@ -17,11 +20,15 @@ import { approveClaim, findClaimByCode, rejectClaim } from '../domain/payments.j
 import { createPlace, deletePlace } from '../domain/places.js';
 import { getSettings, setSettings, type Lang, type PaymentConfirmationMode, type Settings } from '../domain/settings.js';
 import { anonymiseUser, findUserById, listAdmins, setAdmin, setPaymentHandle } from '../domain/users.js';
+import { t } from '../i18n/index.js';
 import { buildIcs } from '../util/calendar.js';
+import { formatDateTime } from '../util/datetime.js';
+import { parseMoneyToCents } from '../util/money.js';
 import { logger } from '../util/logger.js';
 import { layout } from './layout.js';
 import {
   backupsPage,
+  bookingEditPage,
   bookingsPage,
   dashboardPage,
   loginPage,
@@ -39,6 +46,8 @@ export interface WebDeps {
   /** Live WhatsApp state, so the dashboard can show it. */
   isConnected(): boolean;
   listGroups(): Promise<{ id: string; subject: string }[]>;
+  /** Announces admin changes that affect players, e.g. a moved booking. */
+  notifyGroup(text: string, mentionUserIds?: number[]): Promise<void>;
 }
 
 /**
@@ -188,6 +197,113 @@ export function createWebApp(deps: WebDeps) {
       result.ok
         ? `/bookings?ok=${encodeURIComponent(`Booking ${booking.code} cancelled.`)}`
         : `/bookings?err=${encodeURIComponent(result.reason)}`,
+    );
+  });
+
+  app.get('/bookings/:id/edit', (req, res) => {
+    const booking = findBookingById(Number(req.params.id));
+    if (!booking) return res.redirect('/bookings?err=Booking+not+found');
+    if (booking.status !== 'OPEN') {
+      return res.redirect(
+        '/bookings?err=' + encodeURIComponent('Only an open booking can be edited.'),
+      );
+    }
+
+    send(res, bookingEditPage(booking), {
+      title: `Edit ${booking.code}`,
+      active: '/bookings',
+      flash: flashFrom(req),
+    });
+  });
+
+  app.post('/bookings/:id/edit', async (req, res) => {
+    const booking = findBookingById(Number(req.params.id));
+    if (!booking) return res.redirect('/bookings?err=Booking+not+found');
+
+    const settings = getSettings();
+    const body = req.body ?? {};
+    const fail = (msg: string) =>
+      res.redirect(`/bookings/${booking.id}/edit?err=${encodeURIComponent(msg)}`);
+
+    // The form supplies wall-clock date and time; the database stores UTC.
+    const startsAt = DateTime.fromISO(`${String(body.date ?? '')}T${String(body.time ?? '')}`, {
+      zone: settings.timezone,
+    });
+    if (!startsAt.isValid) return fail('That date and time could not be read.');
+
+    const external = booking.kind === 'EXTERNAL';
+
+    let totalCostCents: number | undefined;
+    if (!external) {
+      const parsed = parseMoneyToCents(String(body.cost ?? ''));
+      if (parsed == null) return fail('That cost could not be read. Use a plain number like 40.');
+      totalCostCents = parsed;
+    }
+
+    const num = (name: string, fallback: number) => {
+      const value = Number.parseInt(String(body[name] ?? ''), 10);
+      return Number.isFinite(value) ? value : fallback;
+    };
+
+    const placeIdRaw = String(body.placeId ?? '').trim();
+    const placeId = placeIdRaw ? Number(placeIdRaw) : null;
+    const customPlace = String(body.customPlace ?? '').trim() || null;
+
+    const result = editBooking(booking.id, {
+      startsAtIso: startsAt.toUTC().toISO()!,
+      durationMin: num('durationMin', booking.duration_min),
+      totalCostCents,
+      minPlayers: external ? undefined : num('minPlayers', booking.min_players),
+      maxPlayers: external ? undefined : num('maxPlayers', booking.max_players),
+      cancelLimitHours: external ? undefined : num('cancelLimitHours', booking.cancel_limit_hours),
+      placeId,
+      customPlace,
+      court: String(body.court ?? '').trim() || null,
+      notes: String(body.notes ?? '').trim() || null,
+    });
+
+    if (!result.ok) {
+      switch (result.reason) {
+        case 'overlap':
+          return fail(
+            `That clashes with booking ${result.conflict.code} at ` +
+              formatDateTime(result.conflict.starts_at, settings.timezone, settings.language),
+          );
+        case 'in_past':
+          return fail('A booking cannot be moved into the past — cancel it instead.');
+        case 'invalid_players':
+          return fail('Maximum players cannot be below the minimum.');
+        case 'no_place':
+          return fail('Pick a place, or type a one-off location.');
+        case 'not_editable':
+          return fail('Only an open booking can be edited.');
+        default:
+          return fail('That booking no longer exists.');
+      }
+    }
+
+    // A moved game is a change to a commitment other people already made, so
+    // the group hears about it rather than discovering it on the day.
+    if (result.scheduleChanged) {
+      const dict = t(settings.language);
+      await deps
+        .notifyGroup(
+          dict.booking.rescheduled(
+            result.booking.code,
+            formatDateTime(result.previousStartsAt, settings.timezone, settings.language),
+            formatDateTime(result.booking.starts_at, settings.timezone, settings.language),
+          ),
+          affectedUserIds(result.booking.id),
+        )
+        .catch((err) => logger.error({ err }, 'could not announce the new schedule'));
+    }
+
+    res.redirect(
+      `/bookings?ok=${encodeURIComponent(
+        result.scheduleChanged
+          ? `${result.booking.code} updated — the group has been told about the new time.`
+          : `${result.booking.code} updated.`,
+      )}`,
     );
   });
 

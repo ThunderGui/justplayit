@@ -56,6 +56,7 @@ async function main(): Promise<void> {
   const server: Server | null = startWebServer({
     isConnected: () => client?.isConnected() ?? false,
     listGroups: async () => (client ? client.listGroups() : []),
+    notifyGroup: (text, mentionUserIds) => notifier.sendToGroup(text, mentionUserIds),
   });
 
   let shuttingDown = false;

@@ -74,6 +74,10 @@ export const pt: Dict = {
     unknownPlace: (input: string, places: string) =>
       `Não conheço o local "${input}". Locais conhecidos: ${places}`,
     ambiguousPlace: (matches: string) => `Qual deles queres dizer? ${matches}`,
+    rescheduled: (code: string, from: string, to: string) =>
+      `📅 A reserva *${code}* foi alterada.\n` +
+      `Antes: ${from}\nAgora: ${to}\n\n` +
+      'Quem já está inscrito mantém a vaga. Se o novo horário não te servir, sai da reserva.',
     listEmpty: 'Não há reservas marcadas. Cria uma com o comando book.',
     listHeader: 'Próximos jogos',
     missingFields: (fields: string) => `Ainda me falta: ${fields}`,

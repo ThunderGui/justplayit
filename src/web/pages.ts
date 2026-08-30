@@ -1,3 +1,4 @@
+import { DateTime } from 'luxon';
 import type { BackupFile } from '../domain/backup.js';
 import {
   getRoster,
@@ -147,6 +148,11 @@ function bookingTable(bookings: Booking[]): string {
           <td>
             ${
               b.status === 'OPEN'
+                ? `<a class="btn secondary" href="/bookings/${b.id}/edit">Edit</a>`
+                : ''
+            }
+            ${
+              b.status === 'OPEN'
                 ? `<form method="post" action="/bookings/${b.id}/cancel" class="inline"
                      onsubmit="return confirm('Cancel booking ${esc(b.code)}?')">
                      <button class="danger" type="submit">Cancel</button></form>`
@@ -171,6 +177,144 @@ export function bookingsPage(): string {
   <h1>Bookings</h1>
   <p class="sub">Everything the bot knows about, newest first.</p>
   <div class="card">${bookingTable(listAllBookings())}</div>`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Edit a booking                                                      */
+/* ------------------------------------------------------------------ */
+
+/** Splits a stored UTC instant into the date and time fields the form shows. */
+export function localDateTimeFields(isoUtc: string, timezone: string): { date: string; time: string } {
+  const local = DateTime.fromISO(isoUtc, { zone: 'utc' }).setZone(timezone);
+  return { date: local.toFormat('yyyy-LL-dd'), time: local.toFormat('HH:mm') };
+}
+
+export function bookingEditPage(booking: Booking): string {
+  const settings = getSettings();
+  const { date, time } = localDateTimeFields(booking.starts_at, settings.timezone);
+  const external = booking.kind === 'EXTERNAL';
+  const roster = external ? null : getRoster(booking.id);
+  const places = listPlaces();
+
+  const placeOptions = places
+    .map(
+      (p) =>
+        `<option value="${p.id}"${p.id === booking.place_id ? ' selected' : ''}>${esc(p.name)}</option>`,
+    )
+    .join('');
+
+  return `
+  <h1>Edit booking ${esc(booking.code)}</h1>
+  <p class="sub">
+    ${esc(placeLabel(booking))} · currently ${esc(when(booking.starts_at))}
+    ${
+      roster
+        ? ` · ${roster.confirmed.length} confirmed${roster.waitlist.length ? `, ${roster.waitlist.length} waiting` : ''}`
+        : ` · on ${esc(booking.external_provider ?? 'an external platform')}`
+    }
+  </p>
+
+  ${
+    roster && roster.confirmed.length > 0
+      ? `<div class="flash err">
+           Changing the date or time announces the new schedule to the group, so the
+           ${roster.confirmed.length} player(s) already in can react. Nobody is removed.
+         </div>`
+      : ''
+  }
+
+  <form method="post" action="/bookings/${booking.id}/edit">
+    <div class="card">
+      <h2 style="margin-top:0">Schedule</h2>
+      <p class="muted" style="margin:0 0 4px">Times are in ${esc(settings.timezone)}.</p>
+      <div class="row">
+        <div>
+          <label for="date">Date</label>
+          <input type="date" id="date" name="date" value="${esc(date)}" required>
+        </div>
+        <div>
+          <label for="time">Start time</label>
+          <input type="time" id="time" name="time" value="${esc(time)}" required>
+        </div>
+        <div>
+          <label for="durationMin">Length (minutes)</label>
+          <input type="number" id="durationMin" name="durationMin"
+                 value="${booking.duration_min}" min="15" max="480" required>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2 style="margin-top:0">Where</h2>
+      <div class="row">
+        <div>
+          <label for="placeId">Place</label>
+          <select id="placeId" name="placeId">
+            <option value="">— free text below —</option>
+            ${placeOptions}
+          </select>
+        </div>
+        <div>
+          <label for="customPlace">Or a one-off location</label>
+          <input type="text" id="customPlace" name="customPlace"
+                 value="${esc(booking.place_id ? '' : (booking.custom_place ?? ''))}"
+                 placeholder="Only used when no place is selected">
+        </div>
+        <div>
+          <label for="court">Court</label>
+          <input type="text" id="court" name="court" value="${esc(booking.court ?? '')}">
+        </div>
+      </div>
+    </div>
+
+    ${
+      external
+        ? `<div class="card">
+             <h2 style="margin-top:0">${esc(booking.external_provider ?? 'External')}</h2>
+             <label for="externalUrl">Link</label>
+             <input type="url" id="externalUrl" name="externalUrl" value="${esc(booking.external_url ?? '')}">
+             <p class="muted" style="margin:8px 0 0">
+               Cost and players are managed on ${esc(booking.external_provider ?? 'the platform')},
+               so they are not editable here.
+             </p>
+           </div>`
+        : `<div class="card">
+             <h2 style="margin-top:0">Cost and players</h2>
+             <div class="row">
+               <div>
+                 <label for="cost">Total cost (${esc(booking.currency)})</label>
+                 <input type="text" id="cost" name="cost"
+                        value="${(booking.total_cost_cents / 100).toFixed(2)}" required>
+               </div>
+               <div>
+                 <label for="minPlayers">Minimum players
+                   <span class="hint">Used for the per-player estimate</span>
+                 </label>
+                 <input type="number" id="minPlayers" name="minPlayers"
+                        value="${booking.min_players}" min="1" max="50" required>
+               </div>
+               <div>
+                 <label for="maxPlayers">Maximum players</label>
+                 <input type="number" id="maxPlayers" name="maxPlayers"
+                        value="${booking.max_players}" min="1" max="50" required>
+               </div>
+             </div>
+             <label for="cancelLimitHours">Free cancellation limit (hours before start)</label>
+             <input type="number" id="cancelLimitHours" name="cancelLimitHours"
+                    value="${booking.cancel_limit_hours}" min="0" max="336" required>
+           </div>`
+    }
+
+    <div class="card">
+      <h2 style="margin-top:0">Notes</h2>
+      <textarea name="notes" rows="3">${esc(booking.notes ?? '')}</textarea>
+    </div>
+
+    <div class="actions">
+      <button type="submit">Save changes</button>
+      <a class="btn secondary" href="/bookings">Cancel</a>
+    </div>
+  </form>`;
 }
 
 /* ------------------------------------------------------------------ */

@@ -77,6 +77,10 @@ export const en = {
     unknownPlace: (input: string, places: string) =>
       `I do not know the place "${input}". Known places: ${places}`,
     ambiguousPlace: (matches: string) => `Which one do you mean? ${matches}`,
+    rescheduled: (code: string, from: string, to: string) =>
+      `📅 Booking *${code}* has been moved.\n` +
+      `Was: ${from}\nNow: ${to}\n\n` +
+      'Everyone already in keeps their spot. If the new time does not work for you, please leave the booking.',
     listEmpty: 'There are no bookings coming up. Create one with the book command.',
     listHeader: 'Upcoming games',
     missingFields: (fields: string) => `I still need: ${fields}`,

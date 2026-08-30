@@ -626,6 +626,114 @@ export function estimateShareCents(booking: Booking): number {
   return count > 0 ? Math.round(booking.total_cost_cents / count) : booking.total_cost_cents;
 }
 
+/* ------------------------------------------------------------------ */
+/* Editing an existing booking                                         */
+/* ------------------------------------------------------------------ */
+
+export interface EditBookingInput {
+  startsAtIso?: string;
+  durationMin?: number;
+  totalCostCents?: number;
+  minPlayers?: number;
+  maxPlayers?: number;
+  placeId?: number | null;
+  customPlace?: string | null;
+  court?: string | null;
+  notes?: string | null;
+  cancelLimitHours?: number;
+}
+
+export type EditBookingResult =
+  | {
+      ok: true;
+      booking: Booking;
+      /** True when the start or duration moved, so players must be told. */
+      scheduleChanged: boolean;
+      previousStartsAt: string;
+    }
+  | { ok: false; reason: 'overlap'; conflict: Booking }
+  | {
+      ok: false;
+      reason: 'not_found' | 'not_editable' | 'in_past' | 'invalid_players' | 'no_place';
+    };
+
+/**
+ * Applies an admin's edits to an open booking.
+ *
+ * Moving a booking re-runs the double-booking check against every other open
+ * booking, excluding itself — otherwise a booking would always collide with
+ * where it already is. The cancellation deadline is derived from the start
+ * time, so it follows the new schedule automatically.
+ */
+export function editBooking(id: number, input: EditBookingInput): EditBookingResult {
+  return transaction<EditBookingResult>(() => {
+    const booking = findBookingById(id);
+    if (!booking) return { ok: false, reason: 'not_found' };
+    // A cancelled or settled booking is history; editing it would rewrite
+    // debts people have already been told about.
+    if (booking.status !== 'OPEN') return { ok: false, reason: 'not_editable' };
+
+    const external = isExternal(booking);
+    const startsAtIso = input.startsAtIso ?? booking.starts_at;
+    const durationMin = input.durationMin ?? booking.duration_min;
+
+    const minPlayers = input.minPlayers ?? booking.min_players;
+    const maxPlayers = input.maxPlayers ?? booking.max_players;
+    if (!external && (minPlayers < 1 || maxPlayers < minPlayers)) {
+      return { ok: false, reason: 'invalid_players' };
+    }
+
+    const placeId = input.placeId !== undefined ? input.placeId : booking.place_id;
+    const customPlace = input.customPlace !== undefined ? input.customPlace : booking.custom_place;
+    if (!placeId && !customPlace && !external) return { ok: false, reason: 'no_place' };
+
+    const scheduleChanged =
+      startsAtIso !== booking.starts_at || durationMin !== booking.duration_min;
+
+    if (scheduleChanged) {
+      // Refuse to move a live booking into the past: auto-settlement would fire
+      // within hours and turn a mistyped year into real debts.
+      if (startsAtIso <= nowIso()) return { ok: false, reason: 'in_past' };
+
+      const conflict = findOverlapping(startsAtIso, durationMin, booking.id);
+      if (conflict) return { ok: false, reason: 'overlap', conflict };
+    }
+
+    updateBooking(booking.id, {
+      starts_at: startsAtIso,
+      duration_min: durationMin,
+      total_cost_cents: input.totalCostCents ?? booking.total_cost_cents,
+      min_players: minPlayers,
+      max_players: maxPlayers,
+      place_id: placeId,
+      custom_place: placeId ? null : customPlace,
+      court: input.court !== undefined ? input.court : booking.court,
+      notes: input.notes !== undefined ? input.notes : booking.notes,
+      cancel_limit_hours: input.cancelLimitHours ?? booking.cancel_limit_hours,
+    });
+
+    // Shrinking the maximum can leave more players confirmed than seats; the
+    // reverse frees seats the waiting list should immediately fill.
+    const updated = findBookingById(booking.id)!;
+    while (promoteFromWaitlist(updated) != null) {
+      /* keep promoting until the court is full or the queue is empty */
+    }
+
+    return {
+      ok: true,
+      booking: findBookingById(booking.id)!,
+      scheduleChanged,
+      previousStartsAt: booking.starts_at,
+    };
+  });
+}
+
+/** Everyone who should hear that a booking changed. */
+export function affectedUserIds(bookingId: number): number[] {
+  const roster = getRoster(bookingId);
+  return [...roster.confirmed, ...roster.waitlist].map((p) => p.user_id);
+}
+
 export function updateBooking(id: number, patch: Partial<Booking>): void {
   const allowed: (keyof Booking)[] = [
     'payer_id', 'place_id', 'custom_place', 'court', 'starts_at', 'duration_min',
