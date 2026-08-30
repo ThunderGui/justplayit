@@ -120,7 +120,7 @@ export function handleCommand(cmd: ParsedCommand, ctx: CommandContext): Outgoing
     case 'report':
       return handleReport(cmd, ctx);
     case 'privacy':
-      return [toDm(ctx.user.id, ctx.dict.misc.privacyNotice)];
+      return [toDm(ctx.user.id, ctx.dict.misc.privacyNotice(ctx.settings.commandPrefix))];
     case 'forgetme':
       return handleForgetMe(ctx);
     default:
@@ -358,7 +358,7 @@ function handleJoin(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] 
   const target = resolveTargetBooking(cmd);
 
   if (target === 'none') {
-    return [reply(cmd.args[0] ? dict.booking.notFound(cmd.args[0].toUpperCase()) : dict.booking.listEmpty)];
+    return [reply(cmd.args[0] ? dict.booking.notFound(cmd.args[0].toUpperCase()) : dict.booking.listEmpty(ctx.settings.commandPrefix))];
   }
   if (target === 'ambiguous') {
     return [reply(`${dict.common.usage(`${ctx.settings.commandPrefix}join <id>`)}\n\n${bookingList(listUpcoming(), dict)}`)];
@@ -414,7 +414,7 @@ function handleLeave(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[]
   const target = resolveTargetBooking(cmd);
 
   if (target === 'none') {
-    return [reply(cmd.args[0] ? dict.booking.notFound(cmd.args[0].toUpperCase()) : dict.booking.listEmpty)];
+    return [reply(cmd.args[0] ? dict.booking.notFound(cmd.args[0].toUpperCase()) : dict.booking.listEmpty(ctx.settings.commandPrefix))];
   }
   if (target === 'ambiguous') {
     return [reply(dict.common.usage(`${ctx.settings.commandPrefix}leave <id>`))];
@@ -463,7 +463,7 @@ function applyLeave(
           booking.code,
           formatMoney(result.shareEstimateCents, booking.currency),
           deadline,
-        )}\n\n${dict.common.confirmYesNo}`,
+        )}\n\n${dict.common.confirmYesNo(ctx.settings.commandPrefix)}`,
       ),
     ];
   }
@@ -862,7 +862,7 @@ function handleForgetMe(ctx: CommandContext): OutgoingMessage[] {
   }
 
   setPending(ctx.user.id, ctx.chatId, 'FORGET_ME', {});
-  return [reply(`${ctx.dict.misc.forgetConfirm}\n\n${ctx.dict.common.confirmYesNo}`)];
+  return [reply(`${ctx.dict.misc.forgetConfirm}\n\n${ctx.dict.common.confirmYesNo(ctx.settings.commandPrefix)}`)];
 }
 
 /* ------------------------------------------------------------------ */

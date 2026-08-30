@@ -47,7 +47,8 @@ export const pt: Dict = {
     ambiguousUser: (names: string[]) =>
       `Há várias pessoas com esse nome: ${names.join(', ')}.\n` +
       'Marca a pessoa com @, ou escreve o nome exatamente como está acima.',
-    confirmYesNo: 'Responde SIM para confirmar, ou qualquer outra coisa para cancelar.',
+    confirmYesNo: (prefix: string) =>
+      `Responde ${prefix}yes para confirmar, ou ${prefix}no para cancelar. Se não fizeres nada, nada muda.`,
     cancelled: 'Cancelado — nada foi alterado.',
     nothingPending: 'Não tens nada à espera de confirmação.',
     sentPrivately: 'Enviei-te os detalhes em privado.',
@@ -78,7 +79,8 @@ export const pt: Dict = {
       `📅 A reserva *${code}* foi alterada.\n` +
       `Antes: ${from}\nAgora: ${to}\n\n` +
       'Quem já está inscrito mantém a vaga. Se o novo horário não te servir, sai da reserva.',
-    listEmpty: 'Não há reservas marcadas. Cria uma com o comando book.',
+    listEmpty: (prefix: string) =>
+      `Não há reservas marcadas. Cria uma com ${prefix}book.`,
     listHeader: 'Próximos jogos',
     missingFields: (fields: string) => `Ainda me falta: ${fields}`,
     badDate: 'Não consegui ler essa data. Tenta algo como 03/09, amanhã ou sexta.',
@@ -169,10 +171,10 @@ export const pt: Dict = {
     reminderUnfilled: (code: string, count: number, min: number, prefix: string) =>
       `*${code}* é amanhã e só há ${count}/${min} jogadores. ` +
       `Envia ${prefix}join ${code} se puderes ir.`,
-    privacyNotice:
+    privacyNotice: (prefix: string) =>
       'Guardo apenas o necessário para gerir as reservas: o teu número de WhatsApp, o nome que mostras, ' +
       'os jogos em que entras e os valores em aberto. Nunca guardo o teu histórico de mensagens. ' +
-      'Usa o comando forget-me para eliminares os teus dados pessoais.',
+      `Usa ${prefix}forgetme para eliminares os teus dados pessoais.`,
     forgetConfirm:
       'Isto remove o teu nome e número do bot. As reservas passadas ficam como registos anónimos ' +
       'e qualquer saldo em aberto continua visível para quem tem a receber. Não é possível anular.',

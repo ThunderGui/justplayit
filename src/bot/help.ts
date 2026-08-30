@@ -60,7 +60,7 @@ export function helpText(dict: Dict, settings: Settings, isAdmin: boolean): stri
     );
   }
 
-  lines.push('', `_${dict.misc.privacyNotice}_`);
+  lines.push('', `_${dict.misc.privacyNotice(p)}_`);
 
   return lines.join('\n');
 }

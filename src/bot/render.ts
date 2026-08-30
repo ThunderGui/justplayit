@@ -119,7 +119,7 @@ export function bookingList(bookings: Booking[], dict: Dict): string {
   const tz = settings.timezone;
   const lang = settings.language;
 
-  if (bookings.length === 0) return dict.booking.listEmpty;
+  if (bookings.length === 0) return dict.booking.listEmpty(settings.commandPrefix);
 
   const out: string[] = [`*${dict.booking.listHeader}*`];
   let currentDay = '';

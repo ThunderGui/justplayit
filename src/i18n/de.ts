@@ -47,7 +47,8 @@ export const de: Dict = {
     ambiguousUser: (names: string[]) =>
       `Mehrere Personen passen darauf: ${names.join(', ')}.\n` +
       'Markiere die Person stattdessen mit @, oder schreib den Namen genau wie oben.',
-    confirmYesNo: 'Antworte mit JA zum Bestätigen, mit allem anderen zum Abbrechen.',
+    confirmYesNo: (prefix: string) =>
+      `Antworte mit ${prefix}yes zum Bestätigen oder ${prefix}no zum Abbrechen. Wenn du nichts tust, ändert sich nichts.`,
     cancelled: 'Abgebrochen — es wurde nichts geändert.',
     nothingPending: 'Es wartet nichts auf deine Bestätigung.',
     sentPrivately: 'Ich habe dir die Details privat geschickt.',
@@ -78,7 +79,8 @@ export const de: Dict = {
       `📅 Buchung *${code}* wurde verschoben.\n` +
       `Vorher: ${from}\nJetzt: ${to}\n\n` +
       'Alle Angemeldeten behalten ihren Platz. Wenn die neue Zeit nicht passt, sag bitte ab.',
-    listEmpty: 'Es stehen keine Buchungen an. Erstelle eine mit dem book-Befehl.',
+    listEmpty: (prefix: string) =>
+      `Es stehen keine Buchungen an. Erstelle eine mit ${prefix}book.`,
     listHeader: 'Kommende Spiele',
     missingFields: (fields: string) => `Mir fehlt noch: ${fields}`,
     badDate: 'Dieses Datum konnte ich nicht lesen. Versuch z. B. 03.09, morgen oder freitag.',
@@ -170,10 +172,10 @@ export const de: Dict = {
     reminderUnfilled: (code: string, count: number, min: number, prefix: string) =>
       `*${code}* ist morgen und es sind erst ${count}/${min} Spieler dabei. ` +
       `Schick ${prefix}join ${code}, wenn du kannst.`,
-    privacyNotice:
+    privacyNotice: (prefix: string) =>
       'Ich speichere nur, was ich für die Buchungen brauche: deine WhatsApp-Nummer, deinen Anzeigenamen, ' +
       'die Spiele, bei denen du mitmachst, und offene Beträge. Deinen Nachrichtenverlauf speichere ich nie. ' +
-      'Mit dem forget-me-Befehl lässt du deine personenbezogenen Daten löschen.',
+      `Mit ${prefix}forgetme löschst du deine personenbezogenen Daten.`,
     forgetConfirm:
       'Damit werden dein Name und deine Nummer aus dem Bot entfernt. Vergangene Buchungen bleiben anonymisiert erhalten, ' +
       'und ein offener Saldo bleibt für die Person sichtbar, der du etwas schuldest. Das lässt sich nicht rückgängig machen.',

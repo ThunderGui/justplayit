@@ -49,7 +49,8 @@ export const en = {
     ambiguousUser: (names: string[]) =>
       `Several people match that name: ${names.join(', ')}.\n` +
       'Tag them with @ instead, or repeat the name exactly as written above.',
-    confirmYesNo: 'Reply YES to confirm, or anything else to cancel.',
+    confirmYesNo: (prefix: string) =>
+      `Reply ${prefix}yes to confirm, or ${prefix}no to cancel. If you do nothing, nothing changes.`,
     cancelled: 'Cancelled — nothing was changed.',
     nothingPending: 'You have nothing waiting for confirmation.',
     sentPrivately: 'I have sent you the details privately.',
@@ -81,7 +82,8 @@ export const en = {
       `📅 Booking *${code}* has been moved.\n` +
       `Was: ${from}\nNow: ${to}\n\n` +
       'Everyone already in keeps their spot. If the new time does not work for you, please leave the booking.',
-    listEmpty: 'There are no bookings coming up. Create one with the book command.',
+    listEmpty: (prefix: string) =>
+      `There are no bookings coming up. Create one with ${prefix}book.`,
     listHeader: 'Upcoming games',
     missingFields: (fields: string) => `I still need: ${fields}`,
     badDate: 'I could not read that date. Try something like 03/09, tomorrow, or friday.',
@@ -178,10 +180,10 @@ export const en = {
     reminderUnfilled: (code: string, count: number, min: number, prefix: string) =>
       `*${code}* is tomorrow and only ${count}/${min} players are in. ` +
       `Send ${prefix}join ${code} if you can make it.`,
-    privacyNotice:
+    privacyNotice: (prefix: string) =>
       'I store only what I need to run the bookings: your WhatsApp number, display name, ' +
       'the games you join and what you owe. I never store your message history. ' +
-      'Send the forget-me command to have your personal data removed.',
+      `Send ${prefix}forgetme to have your personal data removed.`,
     forgetConfirm:
       'This removes your name and number from the bot. Past bookings stay as anonymous entries, ' +
       'and any open balance stays visible to the person you owe. This cannot be undone.',
