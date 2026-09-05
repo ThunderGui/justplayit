@@ -3,24 +3,44 @@ services:
     build: .
     image: justplayit:latest
     container_name: justplayit
+
+    # Brings the bot back after a crash, a Docker restart, and — because the
+    # Docker service itself is enabled at boot — after a power cut. "unless-stopped"
+    # rather than "always" so that a deliberate `docker compose stop` stays stopped
+    # instead of coming back on the next reboot.
     restart: unless-stopped
 
-    # The QR code for linking the WhatsApp device is printed to the logs on
-    # first run, so the container needs a TTY to draw it:
-    #   docker compose logs -f justplayit
+    # Only needed to draw the QR code on first link. Harmless afterwards, and
+    # worth keeping for the day the WhatsApp session has to be re-established.
     tty: true
 
     env_file:
       - .env
 
+    environment:
+      # Pinned here, not left to .env. `environment` overrides `env_file`, and a
+      # DATA_DIR meant for running outside Docker (./data) would otherwise point
+      # the container at /app/data — inside the writable layer, missing the bind
+      # mount entirely, and wiped on the next rebuild.
+      DATA_DIR: /data
+
+      # Logs are timestamped in UTC regardless; this only affects the host's own
+      # clock handling. Booking times come from the group's timezone setting.
+      TZ: ${TZ:-Europe/Berlin}
+
     ports:
-      - "8080:8080"
+      # Override WEB_PORT in .env to move the console off 8080.
+      - "${WEB_PORT:-8080}:${WEB_PORT:-8080}"
 
     volumes:
-      # Everything stateful: database, WhatsApp credentials, payment proofs.
-      - justplayit-data:/data
+      # A bind mount rather than a named volume: the database, the WhatsApp
+      # credentials and the daily backups are then ordinary files next to the
+      # project, so they can be copied, inspected and backed up without going
+      # through Docker. Losing this directory means re-linking WhatsApp and
+      # losing the ledger, so it is the one thing worth backing up off-box.
+      - ./data:/data
 
-    # Modest ceilings so the bot cannot starve everything else on a Pi.
+    # Modest ceilings so the bot cannot starve anything else on the machine.
     deploy:
       resources:
         limits:
@@ -31,6 +51,3 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-
-volumes:
-  justplayit-data:

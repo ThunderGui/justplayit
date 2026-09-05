@@ -174,3 +174,85 @@ The container idles at roughly 80–120 MB RSS; `docker-compose.yml` caps it at
 512 MB. There is no browser and no native module in the stack — Baileys talks to
 WhatsApp over a WebSocket and SQLite is built into Node — which is what keeps it
 comfortable alongside Home Assistant on a Pi.
+
+---
+
+## 3. An always-on Debian box (Beelink, NUC, mini-PC)
+
+The simplest of the three: an ordinary machine with Docker, surviving reboots
+and power cuts on its own.
+
+### How it survives a power cut
+
+Two things combine, and both are needed:
+
+1. `restart: unless-stopped` in `docker-compose.yml` — Docker restores the
+   container whenever its daemon starts.
+2. `systemctl enable docker` — the daemon itself starts at boot.
+
+`unless-stopped` rather than `always` is deliberate: a container you deliberately
+stopped stays stopped across a reboot, instead of resurrecting itself.
+
+### First deployment
+
+From your laptop, once:
+
+```bash
+ssh-copy-id thundergui@10.0.0.64     # you type the password; key auth after this
+```
+
+Then:
+
+```bash
+MIGRATE_DATA=1 ./deploy/deploy.sh thundergui@10.0.0.64
+```
+
+The script installs Docker if missing, enables it at boot, syncs the source,
+copies `data/` across, builds, starts, and waits for `/healthz`.
+
+### Moving an existing bot without re-linking WhatsApp
+
+`data/wa-auth/` holds the linked-device credentials. Copying it over means the
+bot keeps its WhatsApp session and its ledger — no QR scan, no lost balances.
+
+**Only one process may use those credentials at a time.** Two bots on the same
+session fight over the socket and can invalidate the link. So:
+
+```bash
+# 1. stop the old instance FIRST
+pkill -f "dist/index.js"          # or: docker compose down
+
+# 2. then migrate
+MIGRATE_DATA=1 ./deploy/deploy.sh thundergui@10.0.0.64
+```
+
+`MIGRATE_DATA=1` refuses to run if the target already has a database, so a
+re-deploy can never silently overwrite live data.
+
+### Re-deploying after a code change
+
+```bash
+./deploy/deploy.sh thundergui@10.0.0.64      # no MIGRATE_DATA
+```
+
+Source is synced and the image rebuilt; `data/` on the target is left alone.
+
+### Everyday operations on the box
+
+```bash
+cd ~/justplayit
+docker compose logs -f            # follow
+docker compose ps                 # status
+docker compose restart            # restart
+docker compose down               # stop (stays stopped across reboots)
+ls data/backups                   # daily database snapshots
+```
+
+### Getting backups off the machine
+
+The daily snapshots live on the host, so a disk failure takes them with it.
+From your laptop:
+
+```bash
+rsync -az thundergui@10.0.0.64:~/justplayit/data/backups/ ./backups/
+```
