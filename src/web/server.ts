@@ -23,6 +23,7 @@ import { getSettings, setSettings, type Lang, type PaymentConfirmationMode, type
 import { anonymiseUser, findUserById, listAdmins, setAdmin, setPaymentHandle } from '../domain/users.js';
 import { t } from '../i18n/index.js';
 import { buildIcs } from '../util/calendar.js';
+import { bookingTitle } from '../bot/render.js';
 import { formatDateTime } from '../util/datetime.js';
 import { parseMoneyToCents } from '../util/money.js';
 import { logger } from '../util/logger.js';
@@ -122,7 +123,7 @@ export function createWebApp(deps: WebDeps) {
 
     const ics = buildIcs({
       uid: `justplayit-${booking.code}@justplayit`,
-      title: `Padel — ${placeLabel(booking)}`,
+      title: bookingTitle(booking),
       startIsoUtc: booking.starts_at,
       durationMin: booking.duration_min,
       location: placeAddress(booking),

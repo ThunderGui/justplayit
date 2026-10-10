@@ -11,6 +11,7 @@ import type { PairBalance } from '../domain/ledger.js';
 import { getSettings } from '../domain/settings.js';
 import { displayName, findUserById } from '../domain/users.js';
 import { externalPlayers } from '../domain/external-sync.js';
+import { findGroupById, type Sport } from '../domain/groups.js';
 import type { Dict } from '../i18n/index.js';
 import { googleCalendarUrl } from '../util/calendar.js';
 import { formatDateTime, formatDayHeading } from '../util/datetime.js';
@@ -21,8 +22,18 @@ import { formatMoney } from '../util/money.js';
  * these messages are read on a phone, in a busy group chat.
  */
 
+/** Title words per sport, capitalised for the calendar entry. */
+const SPORT_TITLE: Record<Sport, string> = {
+  padel: 'Padel',
+  tennis: 'Tennis',
+  squash: 'Squash',
+  badminton: 'Badminton',
+  other: 'Game',
+};
+
 export function bookingTitle(booking: Booking): string {
-  return `Padel — ${placeLabel(booking)}`;
+  const sport = findGroupById(booking.group_id)?.sport ?? 'padel';
+  return `${SPORT_TITLE[sport]} — ${placeLabel(booking)}`;
 }
 
 export function calendarLink(booking: Booking): string {

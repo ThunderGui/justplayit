@@ -92,8 +92,18 @@ const toDm = (userId: number, text: string): OutgoingMessage => ({
 
 export function handleCommand(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] {
   switch (cmd.name) {
-    case 'help':
-      return [reply(helpText(ctx.dict, ctx.settings, ctx.isAdmin))];
+    case 'help': {
+      const text = helpText(ctx.dict, ctx.settings, ctx.isAdmin);
+      // Admins get the fuller, admin-only help privately — it lists privileged
+      // commands the rest of the group has no use seeing, and keeps the group
+      // chat uncluttered. Non-admins get it where they asked.
+      if (ctx.isAdmin) {
+        return ctx.isGroup
+          ? [toDm(ctx.user.id, text), reply(ctx.dict.common.sentPrivately)]
+          : [toDm(ctx.user.id, text)];
+      }
+      return [reply(text)];
+    }
     case 'list':
       return handleList(ctx);
     case 'show':
