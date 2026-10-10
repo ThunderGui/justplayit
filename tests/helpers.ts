@@ -1,21 +1,43 @@
 import { DateTime } from 'luxon';
 import { closeDb, initTestDb } from '../src/db/index.js';
+import { ensureGroup, ensureMember, updateGroup, type Sport } from '../src/domain/groups.js';
 import { createBooking, type Booking } from '../src/domain/bookings.js';
 import { createPlace } from '../src/domain/places.js';
 import { invalidateSettings, setSettings, type Settings } from '../src/domain/settings.js';
 import { upsertUser, type User } from '../src/domain/users.js';
 
-export function freshDb(settings: Partial<Settings> = {}): void {
+/**
+ * The group every helper works in unless a test says otherwise. Migration 4
+ * creates group 1 from whatever this install was bound to, so tests inherit the
+ * same shape a real upgrade produces.
+ */
+export const GROUP = 1;
+
+export function freshDb(settings: Partial<Settings> = {}, sport: Sport = 'padel'): void {
   closeDb();
   initTestDb();
   invalidateSettings();
-  setSettings({ timezone: 'Europe/Berlin', currency: 'EUR', ...settings });
+  if (sport !== 'padel') {
+    updateGroup(GROUP, { sport });
+    invalidateSettings(GROUP);
+  }
+  setSettings({ timezone: 'Europe/Berlin', currency: 'EUR', ...settings }, GROUP);
 }
 
-export function user(name: string): User {
+/** A second, independent group, for proving that nothing leaks between them. */
+export function otherGroup(name = 'Other group', sport: Sport = 'padel'): number {
+  const g = ensureGroup(`other-${name.replace(/\W/g, '')}@g.us`, name);
+  updateGroup(g.id, { sport });
+  invalidateSettings(g.id);
+  return g.id;
+}
+
+export function user(name: string, groupId: number = GROUP): User {
   // Deterministic per-name JID so repeated calls return the same person.
   const digits = String(4915000000 + hash(name)).slice(0, 12);
-  return upsertUser(`${digits}@s.whatsapp.net`, name);
+  const u = upsertUser(`${digits}@s.whatsapp.net`, name);
+  ensureMember(groupId, u.id);
+  return u;
 }
 
 function hash(s: string): number {
@@ -32,6 +54,7 @@ export function inHours(hours: number): string {
 export function booking(
   creator: User,
   overrides: Partial<{
+    groupId: number;
     startsAtIso: string;
     totalCostCents: number;
     minPlayers: number;
@@ -41,9 +64,14 @@ export function booking(
     joinAsPlayer: boolean;
   }> = {},
 ): Booking {
-  const place = createPlace({ name: `Club ${Math.random().toString(36).slice(2, 8)}` });
+  const groupId = overrides.groupId ?? GROUP;
+  const place = createPlace({
+    groupId,
+    name: `Club ${Math.random().toString(36).slice(2, 8)}`,
+  });
   const maxPlayers = overrides.maxPlayers ?? 4;
   const result = createBooking({
+    groupId,
     creator,
     placeId: place.id,
     startsAtIso: overrides.startsAtIso ?? inHours(72),

@@ -189,15 +189,15 @@ export async function runSettlementAnnouncements(notifier: Notifier): Promise<nu
 }
 
 /** Nudges the group about a game that is close and still short of players. */
-export async function runFillReminders(notifier: Notifier): Promise<number> {
-  const settings = getSettings();
+export async function runFillReminders(notifier: Notifier, groupId = 1): Promise<number> {
+  const settings = getSettings(groupId);
   if (settings.reminderHoursBefore <= 0) return 0;
 
   const dict = t(settings.language);
   const horizon = DateTime.utc().plus({ hours: settings.reminderHoursBefore }).toISO()!;
   let sent = 0;
 
-  for (const booking of listUpcoming(50)) {
+  for (const booking of listUpcoming(groupId, 50)) {
     if (booking.kind === 'EXTERNAL') continue;
     if (booking.starts_at > horizon) continue;
 
@@ -252,7 +252,9 @@ export async function runPaymentReminders(notifier: Notifier): Promise<number> {
     );
 
     for (const { from_user_id } of debtors) {
-      const owed = balanceFor(from_user_id).find((b) => b.otherUserId === booking.payer_id);
+      const owed = balanceFor(from_user_id, booking.group_id).find(
+        (b) => b.otherUserId === booking.payer_id,
+      );
       if (!owed || owed.cents <= 0) continue;
 
       await notifier.sendToUser(

@@ -52,16 +52,16 @@ export function loginPage(error?: string): string {
 /* Dashboard                                                           */
 /* ------------------------------------------------------------------ */
 
-export function dashboardPage(connected: boolean): string {
-  const settings = getSettings();
-  const upcoming = listUpcoming(10);
-  const claims = listPendingClaims();
+export function dashboardPage(connected: boolean, groupId: number): string {
+  const settings = getSettings(groupId);
+  const upcoming = listUpcoming(groupId, 10);
+  const claims = listPendingClaims(groupId);
   const admins = listUsers().filter((u) => u.is_admin === 1);
 
   const setupIssues: string[] = [];
   if (!settings.groupJid) setupIssues.push('No WhatsApp group linked yet.');
   if (admins.length === 0) setupIssues.push('No admin user recognised yet.');
-  if (listPlaces().length === 0) setupIssues.push('No places added yet.');
+  if (listPlaces(groupId).length === 0) setupIssues.push('No places added yet.');
 
   return `
   <h1>Dashboard</h1>
@@ -172,11 +172,11 @@ function bookingTable(bookings: Booking[]): string {
   </table></div>`;
 }
 
-export function bookingsPage(): string {
+export function bookingsPage(groupId: number): string {
   return `
   <h1>Bookings</h1>
   <p class="sub">Everything the bot knows about, newest first.</p>
-  <div class="card">${bookingTable(listAllBookings())}</div>`;
+  <div class="card">${bookingTable(listAllBookings(groupId))}</div>`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -194,7 +194,7 @@ export function bookingEditPage(booking: Booking): string {
   const { date, time } = localDateTimeFields(booking.starts_at, settings.timezone);
   const external = booking.kind === 'EXTERNAL';
   const roster = external ? null : getRoster(booking.id);
-  const places = listPlaces();
+  const places = listPlaces(booking.group_id);
 
   const placeOptions = places
     .map(
@@ -321,8 +321,8 @@ export function bookingEditPage(booking: Booking): string {
 /* Places                                                             */
 /* ------------------------------------------------------------------ */
 
-export function placesPage(): string {
-  const places = listPlaces(true);
+export function placesPage(groupId: number): string {
+  const places = listPlaces(groupId, true);
 
   return `
   <h1>Places</h1>
@@ -419,10 +419,10 @@ export function peoplePage(): string {
 /* Money                                                               */
 /* ------------------------------------------------------------------ */
 
-export function moneyPage(): string {
-  const balances = overallBalances();
-  const transfers = simplifyDebts();
-  const ledger = listLedger(60);
+export function moneyPage(groupId: number): string {
+  const balances = overallBalances(groupId);
+  const transfers = simplifyDebts(groupId);
+  const ledger = listLedger(groupId, 60);
 
   return `
   <h1>Money</h1>
@@ -606,8 +606,8 @@ function checkbox(name: string, checked: boolean, label: string, hint?: string):
   </label>`;
 }
 
-export function settingsPage(groups: { id: string; subject: string }[]): string {
-  const s: Settings = getSettings();
+export function settingsPage(groups: { id: string; subject: string }[], groupId: number): string {
+  const s: Settings = getSettings(groupId);
 
   const groupOptions = groups
     .map(

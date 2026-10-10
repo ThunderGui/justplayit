@@ -39,8 +39,7 @@ export function calendarLink(booking: Booking): string {
 }
 
 /** The full detail card, used on create/join and on `show <id>`. */
-export function bookingCard(booking: Booking, dict: Dict): string {
-  const settings = getSettings();
+export function bookingCard(booking: Booking, dict: Dict, settings = getSettings()): string {
   const tz = settings.timezone;
   const lang = settings.language;
   const L = dict.label;
@@ -114,8 +113,7 @@ export function bookingCard(booking: Booking, dict: Dict): string {
 }
 
 /** One compact line per booking, grouped under day headings. */
-export function bookingList(bookings: Booking[], dict: Dict): string {
-  const settings = getSettings();
+export function bookingList(bookings: Booking[], dict: Dict, settings = getSettings()): string {
   const tz = settings.timezone;
   const lang = settings.language;
 

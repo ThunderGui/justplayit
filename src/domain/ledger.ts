@@ -9,6 +9,7 @@ export type LedgerKind = 'CHARGE' | 'PAYMENT' | 'ADJUSTMENT';
 
 export interface LedgerEntry {
   id: number;
+  group_id: number;
   kind: LedgerKind;
   booking_id: number | null;
   from_user_id: number;
@@ -31,6 +32,7 @@ export interface PairBalance {
 /* ------------------------------------------------------------------ */
 
 export function addLedgerEntry(input: {
+  groupId: number;
   kind: LedgerKind;
   fromUserId: number;
   toUserId: number;
@@ -42,14 +44,15 @@ export function addLedgerEntry(input: {
 }): LedgerEntry {
   const { lastInsertRowid } = run(
     `INSERT INTO ledger_entries
-       (kind, booking_id, from_user_id, to_user_id, amount_cents, currency, note, created_by, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (group_id, kind, booking_id, from_user_id, to_user_id, amount_cents, currency, note, created_by, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    input.groupId,
     input.kind,
     input.bookingId ?? null,
     input.fromUserId,
     input.toUserId,
     input.amountCents,
-    input.currency ?? getSettings().currency,
+    input.currency ?? getSettings(input.groupId).currency,
     input.note ?? null,
     input.createdBy ?? null,
     nowIso(),
@@ -109,6 +112,7 @@ export function settleBooking(bookingId: number): SettleResult {
       if (userId === booking.payer_id || amountCents === 0) return;
 
       addLedgerEntry({
+        groupId: booking.group_id,
         kind: 'CHARGE',
         fromUserId: userId,
         toUserId: booking.payer_id,
@@ -142,7 +146,7 @@ export function settleBooking(bookingId: number): SettleResult {
  *
  * Returns entries sorted largest-debt-first, zeroes omitted.
  */
-export function balanceFor(userId: number): PairBalance[] {
+export function balanceFor(userId: number, groupId: number): PairBalance[] {
   const rows = many<{
     kind: LedgerKind;
     from_user_id: number;
@@ -151,8 +155,9 @@ export function balanceFor(userId: number): PairBalance[] {
   }>(
     `SELECT kind, from_user_id, to_user_id, SUM(amount_cents) AS total
        FROM ledger_entries
-      WHERE from_user_id = ? OR to_user_id = ?
+      WHERE group_id = ? AND (from_user_id = ? OR to_user_id = ?)
       GROUP BY kind, from_user_id, to_user_id`,
+    groupId,
     userId,
     userId,
   );
@@ -188,7 +193,7 @@ export interface OverallBalanceRow {
 }
 
 /** Every user's net position. Sums to zero. Used by the admin overview. */
-export function overallBalances(): OverallBalanceRow[] {
+export function overallBalances(groupId: number): OverallBalanceRow[] {
   const rows = many<{
     kind: LedgerKind;
     from_user_id: number;
@@ -196,7 +201,9 @@ export function overallBalances(): OverallBalanceRow[] {
     total: number;
   }>(
     `SELECT kind, from_user_id, to_user_id, SUM(amount_cents) AS total
-       FROM ledger_entries GROUP BY kind, from_user_id, to_user_id`,
+       FROM ledger_entries WHERE group_id = ?
+      GROUP BY kind, from_user_id, to_user_id`,
+    groupId,
   );
 
   const net = new Map<number, number>();
@@ -229,8 +236,8 @@ export interface Transfer {
  * Greedy largest-debtor-to-largest-creditor. Not provably minimal (that problem
  * is NP-hard), but optimal for the small, sparse graphs a friend group produces.
  */
-export function simplifyDebts(): Transfer[] {
-  const balances = overallBalances();
+export function simplifyDebts(groupId: number): Transfer[] {
+  const balances = overallBalances(groupId);
   const debtors = balances.filter((b) => b.netCents < 0).map((b) => ({ ...b }));
   const creditors = balances.filter((b) => b.netCents > 0).map((b) => ({ ...b }));
 
@@ -260,11 +267,18 @@ export function simplifyDebts(): Transfer[] {
 }
 
 /** Ledger history between two people, newest first. */
-export function historyBetween(userId: number, otherUserId: number, limit = 20): LedgerEntry[] {
+export function historyBetween(
+  userId: number,
+  otherUserId: number,
+  groupId: number,
+  limit = 20,
+): LedgerEntry[] {
   return many<LedgerEntry>(
     `SELECT * FROM ledger_entries
-      WHERE (from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?)
+      WHERE group_id = ?
+        AND ((from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?))
       ORDER BY created_at DESC LIMIT ?`,
+    groupId,
     userId,
     otherUserId,
     otherUserId,
@@ -273,6 +287,10 @@ export function historyBetween(userId: number, otherUserId: number, limit = 20):
   );
 }
 
-export function listLedger(limit = 200): LedgerEntry[] {
-  return many<LedgerEntry>('SELECT * FROM ledger_entries ORDER BY created_at DESC LIMIT ?', limit);
+export function listLedger(groupId: number, limit = 200): LedgerEntry[] {
+  return many<LedgerEntry>(
+    'SELECT * FROM ledger_entries WHERE group_id = ? ORDER BY created_at DESC LIMIT ?',
+    groupId,
+    limit,
+  );
 }

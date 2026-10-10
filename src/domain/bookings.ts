@@ -19,6 +19,7 @@ export type BookingKind = 'MANAGED' | 'EXTERNAL';
 
 export interface Booking {
   id: number;
+  group_id: number;
   code: string;
   kind: BookingKind;
   external_provider: string | null;
@@ -41,6 +42,13 @@ export interface Booking {
   cancelled_by: number | null;
   settled_at: string | null;
   created_at: string;
+  /* Populated by the external-platform sync; see domain/providers/. */
+  external_synced_at: string | null;
+  external_status: string | null;
+  external_players: string | null;
+  external_slots_total: number | null;
+  external_slots_free: number | null;
+  external_sync_error: string | null;
 }
 
 export interface Participant {
@@ -93,20 +101,25 @@ export function getParticipant(bookingId: number, userId: number): Participant |
   );
 }
 
-export function listUpcoming(limit = 20): Booking[] {
+export function listUpcoming(groupId: number, limit = 20): Booking[] {
   return many<Booking>(
     `SELECT * FROM bookings
-      WHERE status = 'OPEN' AND datetime(starts_at) >= datetime(?)
+      WHERE group_id = ? AND status = 'OPEN' AND datetime(starts_at) >= datetime(?)
       ORDER BY starts_at
       LIMIT ?`,
+    groupId,
     // A game already under way is still "upcoming" for listing purposes.
     DateTime.utc().minus({ hours: 3 }).toISO()!,
     limit,
   );
 }
 
-export function listAllBookings(limit = 200): Booking[] {
-  return many<Booking>('SELECT * FROM bookings ORDER BY starts_at DESC LIMIT ?', limit);
+export function listAllBookings(groupId: number, limit = 200): Booking[] {
+  return many<Booking>(
+    'SELECT * FROM bookings WHERE group_id = ? ORDER BY starts_at DESC LIMIT ?',
+    groupId,
+    limit,
+  );
 }
 
 export function placeLabel(booking: Booking): string {
@@ -147,6 +160,7 @@ export function isPastCancellationDeadline(booking: Booking, at: string = nowIso
  * be on two courts at once.
  */
 export function findOverlapping(
+  groupId: number,
   startsAtIso: string,
   durationMin: number,
   excludeBookingId?: number,
@@ -156,12 +170,14 @@ export function findOverlapping(
 
   return one<Booking>(
     `SELECT * FROM bookings
-      WHERE status = 'OPEN'
+      WHERE group_id = ?
+        AND status = 'OPEN'
         AND id <> COALESCE(?, -1)
         AND datetime(starts_at) < datetime(?)
         AND datetime(starts_at, '+' || duration_min || ' minutes') > datetime(?)
       ORDER BY starts_at
       LIMIT 1`,
+    groupId,
     excludeBookingId ?? null,
     end.toISO()!,
     start.toISO()!,
@@ -173,6 +189,7 @@ export function findOverlapping(
 /* ------------------------------------------------------------------ */
 
 export interface CreateBookingInput {
+  groupId: number;
   creator: User;
   startsAtIso: string;
   durationMin?: number;
@@ -198,7 +215,7 @@ export type CreateBookingResult =
   | { ok: false; reason: 'cancel_limit_locked' };
 
 export function createBooking(input: CreateBookingInput): CreateBookingResult {
-  const settings = getSettings();
+  const settings = getSettings(input.groupId);
 
   const minPlayers = input.minPlayers ?? settings.defaultMinPlayers;
   const maxPlayers = input.maxPlayers ?? Math.max(settings.defaultMaxPlayers, minPlayers);
@@ -220,7 +237,7 @@ export function createBooking(input: CreateBookingInput): CreateBookingResult {
   const durationMin = input.durationMin ?? settings.defaultDurationMin;
 
   return transaction<CreateBookingResult>(() => {
-    const conflict = findOverlapping(input.startsAtIso, durationMin);
+    const conflict = findOverlapping(input.groupId, input.startsAtIso, durationMin);
     if (conflict) return { ok: false, reason: 'overlap', conflict };
 
     const code = generateUniqueCode(
@@ -229,10 +246,11 @@ export function createBooking(input: CreateBookingInput): CreateBookingResult {
 
     const { lastInsertRowid } = run(
       `INSERT INTO bookings (
-         code, kind, creator_id, payer_id, place_id, custom_place, court,
+         group_id, code, kind, creator_id, payer_id, place_id, custom_place, court,
          starts_at, duration_min, total_cost_cents, currency,
          min_players, max_players, cancel_limit_hours, notes, status, created_at
-       ) VALUES (?, 'MANAGED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)`,
+       ) VALUES (?, ?, 'MANAGED', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPEN', ?)`,
+      input.groupId,
       code,
       input.creator.id,
       input.creator.id,
@@ -266,6 +284,7 @@ export function createBooking(input: CreateBookingInput): CreateBookingResult {
 /* ------------------------------------------------------------------ */
 
 export interface CreateExternalBookingInput {
+  groupId: number;
   creator: User;
   provider: string;
   url: string;
@@ -299,7 +318,7 @@ export function isHttpUrl(value: string): boolean {
 export function createExternalBooking(
   input: CreateExternalBookingInput,
 ): CreateExternalBookingResult {
-  const settings = getSettings();
+  const settings = getSettings(input.groupId);
   const url = input.url.trim();
 
   if (!isHttpUrl(url)) return { ok: false, reason: 'bad_url' };
@@ -310,7 +329,7 @@ export function createExternalBooking(
   return transaction<CreateExternalBookingResult>(() => {
     // Still guards the "no two games at once" rule: the group cannot be on a
     // Playtomic court and a self-organised one simultaneously.
-    const conflict = findOverlapping(input.startsAtIso, durationMin);
+    const conflict = findOverlapping(input.groupId, input.startsAtIso, durationMin);
     if (conflict) return { ok: false, reason: 'overlap', conflict };
 
     const code = generateUniqueCode(
@@ -319,11 +338,12 @@ export function createExternalBooking(
 
     const { lastInsertRowid } = run(
       `INSERT INTO bookings (
-         code, kind, external_provider, external_url, creator_id, payer_id,
+         group_id, code, kind, external_provider, external_url, creator_id, payer_id,
          place_id, custom_place, court, starts_at, duration_min,
          total_cost_cents, currency, min_players, max_players,
          cancel_limit_hours, notes, status, created_at
-       ) VALUES (?, 'EXTERNAL', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, 1, 0, ?, 'OPEN', ?)`,
+       ) VALUES (?, ?, 'EXTERNAL', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 1, 1, 0, ?, 'OPEN', ?)`,
+      input.groupId,
       code,
       input.provider,
       url,
@@ -669,6 +689,8 @@ export function editBooking(id: number, input: EditBookingInput): EditBookingRes
   return transaction<EditBookingResult>(() => {
     const booking = findBookingById(id);
     if (!booking) return { ok: false, reason: 'not_found' };
+    const settings = getSettings(booking.group_id);
+    void settings;
     // A cancelled or settled booking is history; editing it would rewrite
     // debts people have already been told about.
     if (booking.status !== 'OPEN') return { ok: false, reason: 'not_editable' };
@@ -695,7 +717,7 @@ export function editBooking(id: number, input: EditBookingInput): EditBookingRes
       // within hours and turn a mistyped year into real debts.
       if (startsAtIso <= nowIso()) return { ok: false, reason: 'in_past' };
 
-      const conflict = findOverlapping(startsAtIso, durationMin, booking.id);
+      const conflict = findOverlapping(booking.group_id, startsAtIso, durationMin, booking.id);
       if (conflict) return { ok: false, reason: 'overlap', conflict };
     }
 
@@ -738,6 +760,8 @@ export function updateBooking(id: number, patch: Partial<Booking>): void {
   const allowed: (keyof Booking)[] = [
     'payer_id', 'place_id', 'custom_place', 'court', 'starts_at', 'duration_min',
     'total_cost_cents', 'min_players', 'max_players', 'cancel_limit_hours', 'notes', 'status',
+    'external_url', 'external_provider', 'external_synced_at', 'external_status',
+    'external_players', 'external_slots_total', 'external_slots_free', 'external_sync_error',
   ];
   const fields = allowed.filter((k) => patch[k] !== undefined);
   if (fields.length === 0) return;

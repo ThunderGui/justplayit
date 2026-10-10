@@ -18,6 +18,7 @@ import {
 import { settleBooking } from '../domain/ledger.js';
 import { approveClaim, findClaimByCode, rejectClaim } from '../domain/payments.js';
 import { createPlace, deletePlace } from '../domain/places.js';
+import { findGroupById, listGroups as listAllGroups } from '../domain/groups.js';
 import { getSettings, setSettings, type Lang, type PaymentConfirmationMode, type Settings } from '../domain/settings.js';
 import { anonymiseUser, findUserById, listAdmins, setAdmin, setPaymentHandle } from '../domain/users.js';
 import { t } from '../i18n/index.js';
@@ -95,6 +96,16 @@ export function createWebApp(deps: WebDeps) {
 
   const send = (res: Response, body: string, options: Parameters<typeof layout>[1]) =>
     res.type('html').send(layout(body, options));
+
+  /**
+   * Which group the console is acting on. A query parameter rather than session
+   * state, so a link to a page is a link to that group's page.
+   */
+  const groupIdFrom = (req: Request): number => {
+    const raw = Number.parseInt(String(req.query.g ?? ''), 10);
+    if (Number.isFinite(raw) && findGroupById(raw)) return raw;
+    return listAllGroups()[0]?.id ?? 1;
+  };
 
   const flashFrom = (req: Request) => {
     const ok = typeof req.query.ok === 'string' ? req.query.ok : null;
@@ -176,7 +187,7 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.get('/', async (req, res) => {
-    send(res, dashboardPage(deps.isConnected()), {
+    send(res, dashboardPage(deps.isConnected(), groupIdFrom(req)), {
       title: 'Dashboard',
       active: '/',
       flash: flashFrom(req),
@@ -184,7 +195,7 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.get('/bookings', (req, res) => {
-    send(res, bookingsPage(), { title: 'Bookings', active: '/bookings', flash: flashFrom(req) });
+    send(res, bookingsPage(groupIdFrom(req)), { title: 'Bookings', active: '/bookings', flash: flashFrom(req) });
   });
 
   app.post('/bookings/:id/cancel', (req, res) => {
@@ -317,14 +328,14 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.get('/places', (req, res) => {
-    send(res, placesPage(), { title: 'Places', active: '/places', flash: flashFrom(req) });
+    send(res, placesPage(groupIdFrom(req)), { title: 'Places', active: '/places', flash: flashFrom(req) });
   });
 
   app.post('/places', (req, res) => {
     const name = String(req.body?.name ?? '').trim();
     if (!name) return res.redirect('/places?err=A+name+is+required');
     try {
-      createPlace({ name, address: String(req.body?.address ?? '') });
+      createPlace({ groupId: groupIdFrom(req), name, address: String(req.body?.address ?? '') });
       res.redirect(`/places?ok=${encodeURIComponent(`${name} added.`)}`);
     } catch {
       res.redirect('/places?err=' + encodeURIComponent('A place with that name already exists.'));
@@ -375,7 +386,7 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.get('/money', (req, res) => {
-    send(res, moneyPage(), { title: 'Money', active: '/money', flash: flashFrom(req) });
+    send(res, moneyPage(groupIdFrom(req)), { title: 'Money', active: '/money', flash: flashFrom(req) });
   });
 
   app.post('/claims/:id/:action', (req, res) => {
@@ -453,7 +464,7 @@ export function createWebApp(deps: WebDeps) {
       logger.error({ err }, 'could not list WhatsApp groups');
     }
 
-    send(res, settingsPage(groups), {
+    send(res, settingsPage(groups, groupIdFrom(req)), {
       title: 'Settings',
       active: '/settings',
       flash: flashFrom(req),
@@ -468,7 +479,7 @@ export function createWebApp(deps: WebDeps) {
       return Number.isFinite(value) && value >= min && value <= max ? value : fallback;
     };
 
-    const current = getSettings();
+    const current = getSettings(groupIdFrom(req));
     const languages: Lang[] = ['en', 'de', 'pt'];
     const modes: PaymentConfirmationMode[] = ['receiver', 'both', 'dual', 'anyone'];
 
@@ -509,7 +520,7 @@ export function createWebApp(deps: WebDeps) {
       );
     }
 
-    setSettings(patch);
+    setSettings(patch, groupIdFrom(req));
     logger.info('settings updated from web console');
     res.redirect('/settings?ok=' + encodeURIComponent('Settings saved.'));
   });

@@ -5,14 +5,21 @@ import { joinBooking } from '../src/domain/bookings.js';
 import { balanceFor, settleBooking } from '../src/domain/ledger.js';
 import { getSettings, setSettings } from '../src/domain/settings.js';
 import { anonymiseUser, displayName, upsertUser, type User } from '../src/domain/users.js';
+import { ensureMember } from '../src/domain/groups.js';
 import { t } from '../src/i18n/index.js';
-import { booking, freshDb } from './helpers.js';
+import { GROUP, booking, freshDb } from './helpers.js';
 
-/** Two different people who both call themselves "Daniel G". */
+/**
+ * Two different people who both call themselves "Daniel G".
+ *
+ * Membership matters: name lookup is restricted to the group's own members, so
+ * a bare upsertUser would leave them invisible to !confirm.
+ */
 function twoDaniels() {
   const me = upsertUser('4915100000001@s.whatsapp.net', 'Guilherme');
   const a = upsertUser('4915100000002@s.whatsapp.net', 'Daniel G');
   const b = upsertUser('5511900000003@s.whatsapp.net', 'Daniel G');
+  for (const u of [me, a, b]) ensureMember(GROUP, u.id);
   return { me, a, b };
 }
 
@@ -20,6 +27,7 @@ function send(text: string, as: User, opts: Partial<CommandContext> = {}): Outgo
   const parsed = parseMessage(text, { prefix: '!', prefixOptional: true });
   if (parsed.kind !== 'command') throw new Error(`not a command: ${text}`);
   return handleCommand(parsed.command, {
+    groupId: GROUP,
     user: as,
     isAdmin: as.is_admin === 1,
     chatId: 'dm',
@@ -44,8 +52,8 @@ describe('people who share a name', () => {
     settleBooking(bk.id);
 
     expect(a.id).not.toBe(b.id);
-    expect(balanceFor(a.id)).toEqual([{ otherUserId: me.id, cents: 1000 }]);
-    expect(balanceFor(b.id)).toEqual([{ otherUserId: me.id, cents: 1000 }]);
+    expect(balanceFor(a.id, GROUP)).toEqual([{ otherUserId: me.id, cents: 1000 }]);
+    expect(balanceFor(b.id, GROUP)).toEqual([{ otherUserId: me.id, cents: 1000 }]);
   });
 
   it('are shown apart once the name collides', () => {
@@ -116,7 +124,7 @@ describe('paying one of two same-named people', () => {
     expect(out).toContain('Several people match');
     expect(out).toContain('@'); // tells them how to resolve it
     // Nothing was paid off by guessing.
-    expect(balanceFor(me.id)).toHaveLength(2);
+    expect(balanceFor(me.id, GROUP)).toHaveLength(2);
     void a;
     void b;
   });
@@ -126,7 +134,7 @@ describe('paying one of two same-named people', () => {
     const out = textOf(send(`!confirm ${displayName(a)}`, me));
 
     expect(out).toContain('Payment recorded');
-    expect(balanceFor(me.id).find((x) => x.otherUserId === a.id)).toBeUndefined();
+    expect(balanceFor(me.id, GROUP).find((x) => x.otherUserId === a.id)).toBeUndefined();
   });
 
   it('still resolves an @-mention without any name text', () => {
@@ -134,12 +142,13 @@ describe('paying one of two same-named people', () => {
     const out = textOf(send('!confirm', me, { mentionedUserIds: [b.id] }));
 
     expect(out).toContain('Payment recorded');
-    expect(balanceFor(me.id).find((x) => x.otherUserId === b.id)).toBeUndefined();
+    expect(balanceFor(me.id, GROUP).find((x) => x.otherUserId === b.id)).toBeUndefined();
   });
 
   it('does not mistake a bare amount for a phone fragment', () => {
     const me = upsertUser('4915100000001@s.whatsapp.net', 'Guilherme');
     const solo = upsertUser('4915100000004@s.whatsapp.net', 'Solo');
+    for (const u of [me, solo]) ensureMember(GROUP, u.id);
     const bk = booking(solo, { totalCostCents: 2000, minPlayers: 2, maxPlayers: 2 });
     joinBooking(bk.code, me);
     settleBooking(bk.id);

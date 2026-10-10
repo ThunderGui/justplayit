@@ -10,6 +10,7 @@ export type ClaimStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
 
 export interface PaymentClaim {
   id: number;
+  group_id: number;
   code: string;
   from_user_id: number;
   to_user_id: number;
@@ -36,7 +37,7 @@ export function mayConfirm(
   isAdmin: boolean,
   fromUserId: number,
   toUserId: number,
-  mode: PaymentConfirmationMode = getSettings().paymentConfirmationMode,
+  mode: PaymentConfirmationMode,
 ): boolean {
   if (isAdmin) return true;
   switch (mode) {
@@ -71,24 +72,27 @@ export function findClaimByCode(code: string): PaymentClaim | undefined {
 }
 
 /** Claims waiting on this person's approval (not necessarily the receiver). */
-export function listPendingClaimsFor(userId: number): PaymentClaim[] {
+export function listPendingClaimsFor(userId: number, groupId: number): PaymentClaim[] {
   return many<PaymentClaim>(
     `SELECT * FROM payment_claims
-      WHERE status = 'PENDING' AND COALESCE(approver_user_id, to_user_id) = ?
+      WHERE group_id = ? AND status = 'PENDING'
+        AND COALESCE(approver_user_id, to_user_id) = ?
       ORDER BY created_at`,
+    groupId,
     userId,
   );
 }
 
-export function listPendingClaims(): PaymentClaim[] {
+export function listPendingClaims(groupId: number): PaymentClaim[] {
   return many<PaymentClaim>(
-    `SELECT * FROM payment_claims WHERE status = 'PENDING' ORDER BY created_at`,
+    `SELECT * FROM payment_claims WHERE group_id = ? AND status = 'PENDING' ORDER BY created_at`,
+    groupId,
   );
 }
 
 /** How much `fromUserId` currently owes `toUserId`, netted. 0 if nothing. */
-export function amountOwed(fromUserId: number, toUserId: number): number {
-  const entry = balanceFor(fromUserId).find((b) => b.otherUserId === toUserId);
+export function amountOwed(fromUserId: number, toUserId: number, groupId: number): number {
+  const entry = balanceFor(fromUserId, groupId).find((b) => b.otherUserId === toUserId);
   return entry && entry.cents > 0 ? entry.cents : 0;
 }
 
@@ -102,6 +106,7 @@ export type ClaimResult =
  * lands in the ledger immediately or waits for the receiver to approve.
  */
 export function claimPayment(input: {
+  groupId: number;
   claimant: User;
   claimantIsAdmin: boolean;
   fromUserId: number;
@@ -110,11 +115,11 @@ export function claimPayment(input: {
   bookingId?: number | null;
   proofPath?: string | null;
 }): ClaimResult {
-  const settings = getSettings();
+  const settings = getSettings(input.groupId);
 
   if (input.fromUserId === input.toUserId) return { ok: false, reason: 'self_payment' };
 
-  const owed = amountOwed(input.fromUserId, input.toUserId);
+  const owed = amountOwed(input.fromUserId, input.toUserId, input.groupId);
   const amountCents = input.amountCents ?? owed;
 
   if (amountCents <= 0) {
@@ -141,9 +146,10 @@ export function claimPayment(input: {
 
     const { lastInsertRowid } = run(
       `INSERT INTO payment_claims
-         (code, from_user_id, to_user_id, amount_cents, currency, booking_id,
+         (group_id, code, from_user_id, to_user_id, amount_cents, currency, booking_id,
           proof_path, status, claimed_by, approver_user_id, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      input.groupId,
       code,
       input.fromUserId,
       input.toUserId,
@@ -164,6 +170,7 @@ export function claimPayment(input: {
     }
 
     const entry = addLedgerEntry({
+      groupId: input.groupId,
       kind: 'PAYMENT',
       fromUserId: input.fromUserId,
       toUserId: input.toUserId,
@@ -188,7 +195,7 @@ export function claimPayment(input: {
       ok: true,
       status: 'APPROVED',
       claim: one<PaymentClaim>('SELECT * FROM payment_claims WHERE id = ?', claim.id)!,
-      remainingCents: amountOwed(input.fromUserId, input.toUserId),
+      remainingCents: amountOwed(input.fromUserId, input.toUserId, input.groupId),
     };
   });
 }
@@ -207,6 +214,7 @@ export function approveClaim(code: string, actor: User, actorIsAdmin: boolean): 
     if (!actorIsAdmin && actor.id !== approver) return { ok: false, reason: 'not_allowed' };
 
     const entry = addLedgerEntry({
+      groupId: claim.group_id,
       kind: 'PAYMENT',
       fromUserId: claim.from_user_id,
       toUserId: claim.to_user_id,
@@ -230,7 +238,7 @@ export function approveClaim(code: string, actor: User, actorIsAdmin: boolean): 
     return {
       ok: true,
       claim: findClaimByCode(claim.code)!,
-      remainingCents: amountOwed(claim.from_user_id, claim.to_user_id),
+      remainingCents: amountOwed(claim.from_user_id, claim.to_user_id, claim.group_id),
     };
   });
 }

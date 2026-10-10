@@ -9,13 +9,14 @@ import { setPaymentHandle, upsertUser, type User } from '../src/domain/users.js'
 import { t } from '../src/i18n/index.js';
 import { run } from '../src/db/index.js';
 import { DateTime } from 'luxon';
-import { booking, freshDb, inHours, user } from './helpers.js';
+import { GROUP, booking, freshDb, inHours, user } from './helpers.js';
 
 function send(text: string, as: User, opts: Partial<CommandContext> = {}): OutgoingMessage[] {
   const settings = getSettings();
   const parsed = parseMessage(text, { prefix: settings.commandPrefix, prefixOptional: true });
   if (parsed.kind !== 'command') throw new Error(`not a command: ${text}`);
   return handleCommand(parsed.command, {
+    groupId: GROUP,
     user: as,
     isAdmin: as.is_admin === 1,
     chatId: 'dm',
@@ -131,7 +132,7 @@ describe('remind', () => {
 
     const out = send('!remind', bob);
     expect(out[0]!.text.toLowerCase()).toContain('nobody owes you');
-    expect(pendingReminders(bob.id).due).toHaveLength(0);
+    expect(pendingReminders(bob.id, GROUP).due).toHaveLength(0);
   });
 
   it('skips a person whose data was erased', () => {

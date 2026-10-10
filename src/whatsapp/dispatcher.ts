@@ -4,7 +4,14 @@ import { config } from '../config.js';
 import { one, run } from '../db/index.js';
 import { handleCommand, type OutgoingMessage } from '../bot/commands.js';
 import { parseMessage } from '../bot/parser.js';
-import { getSettings, setSetting } from '../domain/settings.js';
+import { getSettings } from '../domain/settings.js';
+import {
+  ensureGroup,
+  ensureMember,
+  groupsForUser,
+  isGroupAdmin,
+  syncGroupAdmins,
+} from '../domain/groups.js';
 import { displayName, findUserById, isAdmin, languageFor, upsertUser } from '../domain/users.js';
 import { t } from '../i18n/index.js';
 import { nowIso } from '../util/datetime.js';
@@ -31,22 +38,46 @@ export function createDispatcher(client: WhatsAppClient) {
   return async function dispatch(message: IncomingMessage): Promise<void> {
     if (alreadyProcessed(message.id)) return;
 
-    const settings = getSettings();
     const user = upsertUser(message.senderJid, message.senderName);
-    const admin = isAdmin(user);
     const dict = t(languageFor(user));
 
-    // Bootstrap: the first admin to run a command in a group adopts that group,
-    // so a fresh install works without opening the web console first.
-    let groupJid = settings.groupJid;
-    if (!groupJid && message.isGroup && admin) {
-      setSetting('groupJid', message.chatId);
-      groupJid = message.chatId;
-      logger.info({ chatId: message.chatId }, 'adopted WhatsApp group');
+    /* ---------------------------------------------------------------- */
+    /* Which group is this?                                              */
+    /*                                                                   */
+    /* In a group chat the chat *is* the group, registered on first sight */
+    /* so adding the bot to a new group needs no console setup. In a DM   */
+    /* there is no chat to go on, so the sender's own membership decides: */
+    /* one group is unambiguous, and several need them to say which.      */
+    /* ---------------------------------------------------------------- */
+    let group;
+    if (message.isGroup) {
+      group = ensureGroup(message.chatId, message.groupSubject ?? null);
+      ensureMember(group.id, user.id);
+      // Keep the bot's idea of who administers the chat in step with WhatsApp's.
+      await syncAdminsIfStale(client, group.id, message.chatId);
+    } else {
+      const mine = groupsForUser(user.id);
+      if (mine.length === 0) return; // not in any group the bot serves
+      group = mine[0]!;
+      if (mine.length > 1) {
+        const chosen = pickGroupFromMessage(message.text, mine);
+        if (!chosen) {
+          await client
+            .sendText(
+              message.chatId,
+              dict.common.whichGroup(mine.map((g) => g.name ?? g.wa_jid).join('\n  • ')),
+            )
+            .catch(() => undefined);
+          return;
+        }
+        group = chosen;
+      }
     }
 
-    // Stay silent in any group that is not the configured one.
-    if (message.isGroup && groupJid && message.chatId !== groupJid) return;
+    const settings = getSettings(group.id);
+    const groupJid = group.wa_jid;
+    // A WhatsApp group admin administers the bot; the console owner always does.
+    const admin = isGroupAdmin(group.id, user.id) || isAdmin(user);
 
     const parsed = parseMessage(message.text, {
       prefix: settings.commandPrefix,
@@ -77,12 +108,13 @@ export function createDispatcher(client: WhatsAppClient) {
     let outgoing: OutgoingMessage[];
     try {
       outgoing = handleCommand(parsed.command, {
+        groupId: group.id,
         user,
         isAdmin: admin,
         chatId: message.chatId,
         isGroup: message.isGroup,
         dict,
-        settings: getSettings(),
+        settings: getSettings(group.id),
         mentionedUserIds,
         attachmentPath,
       });
@@ -95,6 +127,51 @@ export function createDispatcher(client: WhatsAppClient) {
       await send(client, out, message, groupJid);
     }
   };
+}
+
+/**
+ * Mirrors WhatsApp's own admin list onto the group, at most once every few
+ * minutes. WhatsApp is the source of truth — whoever administers the chat
+ * administers the bot — so there is no second list to maintain by hand.
+ */
+const ADMIN_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+const lastAdminSync = new Map<number, number>();
+
+async function syncAdminsIfStale(
+  client: WhatsAppClient,
+  groupId: number,
+  groupJid: string,
+): Promise<void> {
+  const last = lastAdminSync.get(groupId) ?? 0;
+  if (Date.now() - last < ADMIN_SYNC_INTERVAL_MS) return;
+  lastAdminSync.set(groupId, Date.now());
+
+  try {
+    const jids = await client.groupAdmins(groupJid);
+    if (jids.length === 0) return; // a failed lookup must not strip every admin
+    const ids = jids.map((jid) => upsertUser(jid).id);
+    const changed = syncGroupAdmins(groupId, ids);
+    if (changed.length > 0) logger.info({ groupId, changed: changed.length }, 'synced group admins');
+  } catch (err) {
+    logger.error({ err, groupId }, 'admin sync failed');
+  }
+}
+
+/**
+ * Picks a group from a DM when the sender belongs to several. Matches a
+ * trailing or leading `#name` / name fragment against the group names, so
+ * `.list #tennis` works without the user learning an id.
+ */
+function pickGroupFromMessage<T extends { id: number; name: string | null; wa_jid: string }>(
+  text: string,
+  candidates: T[],
+): T | null {
+  const lower = text.toLowerCase();
+  const matches = candidates.filter((g) => {
+    const name = (g.name ?? '').toLowerCase().trim();
+    return name.length > 0 && (lower.includes(`#${name}`) || lower.includes(name));
+  });
+  return matches.length === 1 ? matches[0]! : null;
 }
 
 async function send(

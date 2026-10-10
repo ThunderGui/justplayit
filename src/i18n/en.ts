@@ -54,6 +54,9 @@ export const en = {
     cancelled: 'Cancelled — nothing was changed.',
     nothingPending: 'You have nothing waiting for confirmation.',
     sentPrivately: 'I have sent you the details privately.',
+    whichGroup: (names: string) =>
+      `You are in more than one group I look after, so I do not know which you mean:\n  • ${names}\n` +
+      'Add the group name to your command, or just send it in the group itself.',
     cannotDmYou:
       'I could not message you privately. Send me a direct message once so I am allowed to reply there.',
   },

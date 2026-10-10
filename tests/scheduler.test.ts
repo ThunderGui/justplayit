@@ -18,7 +18,7 @@ import {
   runRetentionPurge,
   type Notifier,
 } from '../src/scheduler/jobs.js';
-import { booking, freshDb, inHours, user } from './helpers.js';
+import { GROUP, booking, freshDb, inHours, user } from './helpers.js';
 
 interface Sent {
   to: 'group' | number;
@@ -66,8 +66,8 @@ describe('automatic settlement', () => {
     expect(await runAutoSettlement(notifier)).toBe(1);
 
     expect(findBookingById(b.id)!.status).toBe('SETTLED');
-    expect(balanceFor(bob.id)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
-    expect(balanceFor(carol.id)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
+    expect(balanceFor(bob.id, GROUP)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
+    expect(balanceFor(carol.id, GROUP)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
 
     const announcement = sent.find((s) => s.to === 'group');
     expect(announcement?.text).toContain(b.code);
@@ -97,12 +97,13 @@ describe('automatic settlement', () => {
     // A second pass one minute later must not charge anybody again.
     expect(await runAutoSettlement(notifier)).toBe(0);
 
-    expect(balanceFor(bob.id)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
+    expect(balanceFor(bob.id, GROUP)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
   });
 
   it('ignores Playtomic bookings entirely', async () => {
     const alice = user('Alice');
     const created = createExternalBooking({
+      groupId: GROUP,
       creator: alice,
       provider: 'Playtomic',
       url: 'https://playtomic.io/m/1',
@@ -146,7 +147,7 @@ describe('automatic settlement', () => {
     const { notifier, sent } = recorder();
     await runAutoSettlement(notifier);
 
-    expect(balanceFor(dave.id)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
+    expect(balanceFor(dave.id, GROUP)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
     expect(sent.find((s) => s.to === 'group')?.text).toContain('late cancellation');
   });
 });
@@ -219,8 +220,9 @@ describe('payment reminders', () => {
 
     // Bob settles up before the reminder runs.
     run(
-      `INSERT INTO ledger_entries (kind, booking_id, from_user_id, to_user_id, amount_cents, currency, created_at)
-       VALUES ('PAYMENT', ?, ?, ?, 1000, 'EUR', ?)`,
+      `INSERT INTO ledger_entries (group_id, kind, booking_id, from_user_id, to_user_id, amount_cents, currency, created_at)
+       VALUES (?, 'PAYMENT', ?, ?, ?, 1000, 'EUR', ?)`,
+      GROUP,
       b.id,
       bob.id,
       alice.id,

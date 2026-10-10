@@ -247,4 +247,106 @@ export const MIGRATIONS: Migration[] = [
     CREATE INDEX idx_reminders_pair ON payment_reminders(from_user_id, to_user_id, sent_at);
     `,
   },
+
+  {
+    id: 4,
+    name: 'multi_group',
+    up: `
+    /* ---------------------------------------------------------------- */
+    /* Multi-group: one bot instance serving several independent groups. */
+    /*                                                                   */
+    /* Each group is its own world — its own settings, places, bookings,  */
+    /* members and ledger. Balances in particular must NOT net across     */
+    /* groups: owing a colleague €8 from the Tuesday padel group has      */
+    /* nothing to do with a tennis group, and silently offsetting them    */
+    /* would invent money movements nobody agreed to.                     */
+    /* ---------------------------------------------------------------- */
+    CREATE TABLE groups (
+      id          INTEGER PRIMARY KEY,
+      wa_jid      TEXT NOT NULL UNIQUE,   -- ...@g.us, the WhatsApp group
+      name        TEXT,
+      -- Only affects wording; all scheduling and money logic is identical.
+      sport       TEXT NOT NULL DEFAULT 'padel',
+      active      INTEGER NOT NULL DEFAULT 1,
+      created_at  TEXT NOT NULL,
+      CHECK (sport IN ('padel','tennis','squash','badminton','other'))
+    );
+
+    /* Membership is per group; identity (users) stays global, because one
+       WhatsApp account is one person regardless of how many groups they
+       are in. is_admin here is group-level, mirrored from WhatsApp's own
+       group admins. users.is_admin remains the web-console superadmin. */
+    CREATE TABLE group_members (
+      group_id    INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      user_id     INTEGER NOT NULL REFERENCES users(id),
+      is_admin    INTEGER NOT NULL DEFAULT 0,
+      joined_at   TEXT NOT NULL,
+      PRIMARY KEY (group_id, user_id)
+    );
+    CREATE INDEX idx_members_user ON group_members(user_id);
+
+    /* Adopt whatever single group this install was already bound to, so an
+       existing deployment keeps its data instead of starting over. */
+    INSERT INTO groups (id, wa_jid, name, sport, active, created_at)
+    SELECT 1,
+           COALESCE((SELECT value FROM settings WHERE key = 'groupJid'), 'unconfigured'),
+           'My group', 'padel', 1, datetime('now');
+
+    /* ---- settings become per-group (primary key changes) ---- */
+    CREATE TABLE settings_new (
+      group_id    INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      key         TEXT NOT NULL,
+      value       TEXT NOT NULL,
+      updated_at  TEXT NOT NULL,
+      PRIMARY KEY (group_id, key)
+    );
+    INSERT INTO settings_new (group_id, key, value, updated_at)
+      SELECT 1, key, value, updated_at FROM settings;
+    DROP TABLE settings;
+    ALTER TABLE settings_new RENAME TO settings;
+
+    /* ---- everything group-scoped gains group_id ---- */
+    ALTER TABLE places          ADD COLUMN group_id INTEGER REFERENCES groups(id);
+    ALTER TABLE bookings        ADD COLUMN group_id INTEGER REFERENCES groups(id);
+    ALTER TABLE ledger_entries  ADD COLUMN group_id INTEGER REFERENCES groups(id);
+    ALTER TABLE payment_claims  ADD COLUMN group_id INTEGER REFERENCES groups(id);
+    ALTER TABLE pending_actions ADD COLUMN group_id INTEGER REFERENCES groups(id);
+    ALTER TABLE reports         ADD COLUMN group_id INTEGER REFERENCES groups(id);
+    ALTER TABLE payment_reminders ADD COLUMN group_id INTEGER REFERENCES groups(id);
+
+    UPDATE places            SET group_id = 1 WHERE group_id IS NULL;
+    UPDATE bookings          SET group_id = 1 WHERE group_id IS NULL;
+    UPDATE ledger_entries    SET group_id = 1 WHERE group_id IS NULL;
+    UPDATE payment_claims    SET group_id = 1 WHERE group_id IS NULL;
+    UPDATE pending_actions   SET group_id = 1 WHERE group_id IS NULL;
+    UPDATE reports           SET group_id = 1 WHERE group_id IS NULL;
+    UPDATE payment_reminders SET group_id = 1 WHERE group_id IS NULL;
+
+    /* Everyone the bot already knew belongs to that first group, carrying
+       their admin flag over as a group admin. */
+    INSERT OR IGNORE INTO group_members (group_id, user_id, is_admin, joined_at)
+      SELECT 1, id, is_admin, created_at FROM users WHERE anonymised_at IS NULL;
+
+    CREATE INDEX idx_places_group   ON places(group_id);
+    CREATE INDEX idx_bookings_group ON bookings(group_id, status, starts_at);
+    CREATE INDEX idx_ledger_group   ON ledger_entries(group_id, from_user_id, to_user_id);
+    CREATE INDEX idx_claims_group   ON payment_claims(group_id, status);
+    CREATE INDEX idx_reports_group  ON reports(group_id);
+
+    /* A place name only has to be unique within its own group. */
+    DROP INDEX IF EXISTS idx_places_name;
+    CREATE UNIQUE INDEX idx_places_group_name ON places(group_id, name COLLATE NOCASE);
+
+    /* Booking codes stay globally unique: users type them without naming a
+       group, and the bot has to resolve one without ambiguity. */
+
+    /* ---- external-platform sync state (Playtomic etc.) ---- */
+    ALTER TABLE bookings ADD COLUMN external_synced_at TEXT;
+    ALTER TABLE bookings ADD COLUMN external_status TEXT;
+    ALTER TABLE bookings ADD COLUMN external_players TEXT;   -- JSON array of names
+    ALTER TABLE bookings ADD COLUMN external_slots_total INTEGER;
+    ALTER TABLE bookings ADD COLUMN external_slots_free INTEGER;
+    ALTER TABLE bookings ADD COLUMN external_sync_error TEXT;
+    `,
+  },
 ];
