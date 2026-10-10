@@ -19,7 +19,7 @@ function flakyNotifier() {
     if (state.failing) throw new Error('Connection Closed');
   };
   const notifier: Notifier = {
-    async sendToGroup(text) { guard(); sent.push({ to: 'group', text }); },
+    async sendToGroup(_groupId, text) { guard(); sent.push({ to: 'group', text }); },
     async sendToUser(userId, text) { guard(); sent.push({ to: userId, text }); },
   };
   return { notifier, sent, state };

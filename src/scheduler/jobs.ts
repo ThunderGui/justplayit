@@ -10,6 +10,7 @@ import {
 } from '../domain/bookings.js';
 import { runDailyBackup } from '../domain/backup.js';
 import { syncExternalBooking } from '../domain/external-sync.js';
+import { listGroups } from '../domain/groups.js';
 import { bookingCard } from '../bot/render.js';
 import { balanceFor, settleBooking, type SettlementLine } from '../domain/ledger.js';
 import { purgeExpiredPending } from '../domain/pending.js';
@@ -24,7 +25,8 @@ import { formatMoney } from '../util/money.js';
 const SETTLE_GRACE_HOURS = 3;
 
 export interface Notifier {
-  sendToGroup(text: string, mentionUserIds?: number[]): Promise<void>;
+  /** Sends to a specific group's chat. groupId identifies which group. */
+  sendToGroup(groupId: number, text: string, mentionUserIds?: number[]): Promise<void>;
   sendToUser(userId: number, text: string): Promise<void>;
 }
 
@@ -60,8 +62,6 @@ function claimJob(kind: string, bookingId: number | null): boolean {
  * settlement that was due while the bot was down.
  */
 export async function runAutoSettlement(notifier: Notifier): Promise<number> {
-  const settings = getSettings();
-  const dict = t(settings.language);
   const cutoff = DateTime.utc().minus({ hours: SETTLE_GRACE_HOURS }).toISO()!;
 
   const due = many<Booking>(
@@ -148,9 +148,6 @@ function settlementLinesFor(booking: Booking): SettlementLine[] {
  * outstanding rather than losing it.
  */
 export async function runSettlementAnnouncements(notifier: Notifier): Promise<number> {
-  const settings = getSettings();
-  const dict = t(settings.language);
-
   const pending = many<Booking>(
     `SELECT b.* FROM bookings b
       WHERE b.status = 'SETTLED' AND b.kind = 'MANAGED' AND b.settled_at IS NOT NULL
@@ -172,9 +169,11 @@ export async function runSettlementAnnouncements(notifier: Notifier): Promise<nu
       continue;
     }
 
+    const settings = getSettings(booking.group_id);
+    const dict = t(settings.language);
     try {
       for (const message of settlementMessages(booking, lines, dict, settings)) {
-        await deliver(notifier, message);
+        await deliver(notifier, booking.group_id, message);
       }
       recordJob('SETTLEMENT_ANNOUNCED', booking.id);
       sent++;
@@ -224,7 +223,7 @@ export async function runExternalSync(notifier: Notifier): Promise<number> {
       if (fresh) {
         const settings = getSettings(fresh.group_id);
         try {
-          await notifier.sendToGroup(bookingCard(fresh, t(settings.language), settings));
+          await notifier.sendToGroup(fresh.group_id, bookingCard(fresh, t(settings.language), settings));
         } catch (err) {
           logger.error({ err, code: fresh.code }, 'could not announce synced external booking');
         }
@@ -235,31 +234,35 @@ export async function runExternalSync(notifier: Notifier): Promise<number> {
 }
 
 /** Nudges the group about a game that is close and still short of players. */
-export async function runFillReminders(notifier: Notifier, groupId = 1): Promise<number> {
-  const settings = getSettings(groupId);
-  if (settings.reminderHoursBefore <= 0) return 0;
-
-  const dict = t(settings.language);
-  const horizon = DateTime.utc().plus({ hours: settings.reminderHoursBefore }).toISO()!;
+export async function runFillReminders(notifier: Notifier): Promise<number> {
   let sent = 0;
 
-  for (const booking of listUpcoming(groupId, 50)) {
-    if (booking.kind === 'EXTERNAL') continue;
-    if (booking.starts_at > horizon) continue;
+  for (const group of listGroups()) {
+    const settings = getSettings(group.id);
+    if (settings.reminderHoursBefore <= 0) continue;
 
-    const roster = getRoster(booking.id);
-    if (roster.confirmed.length >= booking.min_players) continue;
-    if (!claimJob('FILL_REMINDER', booking.id)) continue;
+    const dict = t(settings.language);
+    const horizon = DateTime.utc().plus({ hours: settings.reminderHoursBefore }).toISO()!;
 
-    await notifier.sendToGroup(
-      dict.misc.reminderUnfilled(
-        booking.code,
-        roster.confirmed.length,
-        booking.min_players,
-        settings.commandPrefix,
-      ),
-    );
-    sent++;
+    for (const booking of listUpcoming(group.id, 50)) {
+      if (booking.kind === 'EXTERNAL') continue;
+      if (booking.starts_at > horizon) continue;
+
+      const roster = getRoster(booking.id);
+      if (roster.confirmed.length >= booking.min_players) continue;
+      if (!claimJob('FILL_REMINDER', booking.id)) continue;
+
+      await notifier.sendToGroup(
+        group.id,
+        dict.misc.reminderUnfilled(
+          booking.code,
+          roster.confirmed.length,
+          booking.min_players,
+          settings.commandPrefix,
+        ),
+      );
+      sent++;
+    }
   }
 
   return sent;
@@ -271,8 +274,6 @@ export async function runFillReminders(notifier: Notifier, groupId = 1): Promise
  * awkwardness this bot exists to remove.
  */
 export async function runPaymentReminders(notifier: Notifier): Promise<number> {
-  const settings = getSettings();
-  const dict = t(settings.language);
 
   const settledRecently = many<Booking>(
     `SELECT * FROM bookings WHERE status = 'SETTLED' AND settled_at IS NOT NULL`,
@@ -281,6 +282,8 @@ export async function runPaymentReminders(notifier: Notifier): Promise<number> {
   let sent = 0;
 
   for (const booking of settledRecently) {
+    const settings = getSettings(booking.group_id);
+    const dict = t(settings.language);
     const deadline = DateTime.fromISO(booking.starts_at, { zone: 'utc' }).plus({
       days: settings.paymentDeadlineDays,
     });
@@ -323,7 +326,7 @@ export async function runPaymentReminders(notifier: Notifier): Promise<number> {
  * redeliveries, so they are dropped once they can no longer serve that purpose.
  */
 export function runRetentionPurge(): { messages: number; pending: number } {
-  const settings = getSettings();
+  const settings = getSettings(1);
   const cutoff = DateTime.utc().minus({ days: settings.dataRetentionDays }).toISO()!;
 
   const messages = run('DELETE FROM processed_messages WHERE processed_at < ?', cutoff).changes;
@@ -338,17 +341,21 @@ export function runRetentionPurge(): { messages: number; pending: number } {
  * costs one directory listing until the calendar day rolls over.
  */
 export function runBackup(): ReturnType<typeof runDailyBackup> {
-  const keep = getSettings().backupKeepDays;
+  const keep = getSettings(1).backupKeepDays;
   if (keep <= 0) return { status: 'skipped' };
   return runDailyBackup(keep);
 }
 
-async function deliver(notifier: Notifier, message: OutgoingMessage): Promise<void> {
+async function deliver(
+  notifier: Notifier,
+  groupId: number,
+  message: OutgoingMessage,
+): Promise<void> {
   if (message.target === 'dm' && message.userId != null) {
     await notifier.sendToUser(message.userId, message.text);
     return;
   }
-  await notifier.sendToGroup(message.text, message.mentionUserIds);
+  await notifier.sendToGroup(groupId, message.text, message.mentionUserIds);
 }
 
 export interface SchedulerHandle {

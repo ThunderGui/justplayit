@@ -49,7 +49,7 @@ export interface WebDeps {
   isConnected(): boolean;
   listGroups(): Promise<{ id: string; subject: string }[]>;
   /** Announces admin changes that affect players, e.g. a moved booking. */
-  notifyGroup(text: string, mentionUserIds?: number[]): Promise<void>;
+  notifyGroup(groupId: number, text: string, mentionUserIds?: number[]): Promise<void>;
 }
 
 /**
@@ -300,6 +300,7 @@ export function createWebApp(deps: WebDeps) {
       const dict = t(settings.language);
       await deps
         .notifyGroup(
+          result.booking.group_id,
           dict.booking.rescheduled(
             result.booking.code,
             formatDateTime(result.previousStartsAt, settings.timezone, settings.language),

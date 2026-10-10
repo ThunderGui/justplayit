@@ -105,7 +105,7 @@ describe('scheduler external sync', () => {
   function recorder() {
     const sent: string[] = [];
     const notifier: Notifier = {
-      async sendToGroup(text) { sent.push(text); },
+      async sendToGroup(_groupId, text) { sent.push(text); },
       async sendToUser() {},
     };
     return { notifier, sent };

@@ -30,7 +30,7 @@ function recorder(): { notifier: Notifier; sent: Sent[] } {
   return {
     sent,
     notifier: {
-      async sendToGroup(text) {
+      async sendToGroup(_groupId, text) {
         sent.push({ to: 'group', text });
       },
       async sendToUser(userId, text) {
