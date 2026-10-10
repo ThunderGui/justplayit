@@ -10,6 +10,7 @@ import {
 import type { PairBalance } from '../domain/ledger.js';
 import { getSettings } from '../domain/settings.js';
 import { displayName, findUserById } from '../domain/users.js';
+import { externalPlayers } from '../domain/external-sync.js';
 import type { Dict } from '../i18n/index.js';
 import { googleCalendarUrl } from '../util/calendar.js';
 import { formatDateTime, formatDayHeading } from '../util/datetime.js';
@@ -52,6 +53,18 @@ export function bookingCard(booking: Booking, dict: Dict, settings = getSettings
     lines.push(`${L.when}: ${formatDateTime(booking.starts_at, tz, lang)}`);
     if (booking.court) lines.push(`${L.court}: ${booking.court}`);
     if (booking.notes) lines.push(`${L.notes}: ${booking.notes}`);
+
+    // Live data from the platform, when the bot has synced it.
+    const xp = externalPlayers(booking);
+    if (xp.length > 0) {
+      const slots =
+        booking.external_slots_free != null && booking.external_slots_total != null
+          ? ` (${booking.external_slots_free} ${L.spotsLeft})`
+          : '';
+      lines.push(`${L.players}: ${xp.length}${booking.external_slots_total ? '/' + booking.external_slots_total : ''}${slots}`);
+      lines.push(...xp.map((n) => `  • ${n}`));
+    }
+
     lines.push(`${L.link}: ${booking.external_url}`);
     lines.push('');
     lines.push(dict.external.managedNote(provider));
@@ -135,8 +148,14 @@ export function bookingList(bookings: Booking[], dict: Dict, settings = getSetti
 
     if (isExternal(booking)) {
       const provider = booking.external_provider ?? 'external';
-      out.push(`*${booking.code}* ${time} · ${placeLabel(booking)} · _${provider}_`);
+      const xp = externalPlayers(booking);
+      const xslots =
+        booking.external_slots_total != null
+          ? ` · ${xp.length}/${booking.external_slots_total}`
+          : '';
+      out.push(`*${booking.code}* ${time} · ${placeLabel(booking)} · _${provider}_${xslots}`);
       out.push(...venueLines(booking, dict));
+      if (xp.length > 0) out.push(`   ${xp.join(', ')}`);
       out.push(`   ${booking.external_url}`);
       if (booking.notes) out.push(`   ${dict.label.notes}: ${booking.notes}`);
       continue;

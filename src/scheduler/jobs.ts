@@ -9,6 +9,8 @@ import {
   type Booking,
 } from '../domain/bookings.js';
 import { runDailyBackup } from '../domain/backup.js';
+import { syncExternalBooking } from '../domain/external-sync.js';
+import { bookingCard } from '../bot/render.js';
 import { balanceFor, settleBooking, type SettlementLine } from '../domain/ledger.js';
 import { purgeExpiredPending } from '../domain/pending.js';
 import { getSettings } from '../domain/settings.js';
@@ -188,6 +190,50 @@ export async function runSettlementAnnouncements(notifier: Notifier): Promise<nu
   return sent;
 }
 
+/** How long a synced external booking stays fresh before a refresh. */
+const EXTERNAL_REFRESH_MINUTES = 15;
+
+/**
+ * Enriches external (Playtomic) bookings with live roster/slot data, and
+ * announces the enriched card once, the first time a booking is synced, so the
+ * group sees who is in without anyone re-listing. Never-synced bookings are
+ * done first (immediate feedback after adding); already-synced ones refresh on
+ * a slower cadence.
+ */
+export async function runExternalSync(notifier: Notifier): Promise<number> {
+  const stale = DateTime.utc().minus({ minutes: EXTERNAL_REFRESH_MINUTES }).toISO()!;
+  const due = many<Booking>(
+    `SELECT * FROM bookings
+      WHERE kind = 'EXTERNAL' AND status = 'OPEN'
+        AND datetime(starts_at) >= datetime('now', '-6 hours')
+        AND (external_synced_at IS NULL OR external_synced_at < ?)
+      ORDER BY external_synced_at IS NOT NULL, starts_at`,
+    stale,
+  );
+
+  let synced = 0;
+  for (const booking of due) {
+    const firstSync = booking.external_synced_at == null;
+    const result = await syncExternalBooking(booking);
+    if (!result.ok) continue;
+    synced++;
+
+    // Announce only the first successful sync, so a refresh does not re-spam.
+    if (firstSync) {
+      const fresh = findBookingById(booking.id);
+      if (fresh) {
+        const settings = getSettings(fresh.group_id);
+        try {
+          await notifier.sendToGroup(bookingCard(fresh, t(settings.language), settings));
+        } catch (err) {
+          logger.error({ err, code: fresh.code }, 'could not announce synced external booking');
+        }
+      }
+    }
+  }
+  return synced;
+}
+
 /** Nudges the group about a game that is close and still short of players. */
 export async function runFillReminders(notifier: Notifier, groupId = 1): Promise<number> {
   const settings = getSettings(groupId);
@@ -331,6 +377,7 @@ export function startScheduler(notifier: Notifier, intervalMs = 60_000): Schedul
     };
 
     try {
+      await safely('externalSync', () => runExternalSync(notifier));
       await safely('autoSettlement', () => runAutoSettlement(notifier));
       await safely('settlementAnnouncements', () => runSettlementAnnouncements(notifier));
       await safely('fillReminders', () => runFillReminders(notifier));

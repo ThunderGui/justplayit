@@ -20,6 +20,8 @@ function applyHomeAssistantOptions(): void {
     admin_password: 'ADMIN_PASSWORD',
     session_secret: 'SESSION_SECRET',
     pairing_number: 'WHATSAPP_PAIRING_NUMBER',
+    playtomic_email: 'PLAYTOMIC_EMAIL',
+    playtomic_password: 'PLAYTOMIC_PASSWORD',
     web_port: 'WEB_PORT',
     log_level: 'LOG_LEVEL',
   };
@@ -63,6 +65,14 @@ const schema = z.object({
    * emulator, which has no camera to scan a QR code with.
    */
   WHATSAPP_PAIRING_NUMBER: z.string().default(''),
+
+  /**
+   * A dedicated Playtomic account the bot reads shared matches with. Optional:
+   * without it, Playtomic links are still accepted and shown, just not enriched
+   * with live roster/slot data. One account serves every group.
+   */
+  PLAYTOMIC_EMAIL: z.string().default(''),
+  PLAYTOMIC_PASSWORD: z.string().default(''),
 });
 
 const env = schema.parse(process.env);
@@ -89,6 +99,10 @@ export const config = {
   whatsappEnabled: env.WHATSAPP_ENABLED === 1,
   /** Digits only; empty means link by QR code instead. */
   whatsappPairingNumber: env.WHATSAPP_PAIRING_NUMBER.replace(/\D/g, ''),
+  playtomic:
+    env.PLAYTOMIC_EMAIL.length > 0
+      ? { email: env.PLAYTOMIC_EMAIL, password: env.PLAYTOMIC_PASSWORD }
+      : null,
 } as const;
 
 export type Config = typeof config;
