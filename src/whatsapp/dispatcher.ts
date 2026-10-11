@@ -88,6 +88,9 @@ export function createDispatcher(client: WhatsAppClient) {
 
     if (parsed.kind === 'not_a_command') return;
 
+    // Read the command we are about to answer — a person reads before replying.
+    void client.markRead(message);
+
     if (parsed.kind === 'unknown_command') {
       await send(client, {
         target: 'origin',

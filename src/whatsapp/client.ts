@@ -33,6 +33,8 @@ export type MessageHandler = (message: IncomingMessage) => Promise<void>;
 
 export interface WhatsAppClient {
   sendText(chatId: string, text: string, mentionJids?: string[]): Promise<void>;
+  /** Marks a message as read — used for the commands the bot answers. */
+  markRead(message: IncomingMessage): Promise<void>;
   downloadMedia(message: IncomingMessage): Promise<Buffer | null>;
   /** Resolves a phone number to the JID WhatsApp actually uses for it. */
   isConnected(): boolean;
@@ -74,6 +76,37 @@ export async function startWhatsApp(onMessage: MessageHandler): Promise<WhatsApp
       const oldest = sentMessages.keys().next().value;
       if (oldest) sentMessages.delete(oldest);
     }
+  };
+
+  // Human-like sending (anti-ban hygiene for a reply-only bot): replies are
+  // serialized, never burst, preceded by a brief "typing…", and paced with a
+  // small random delay. Tunable off via WA_HUMANIZE=0.
+  const SEND_MIN_GAP_MS = 900; // never two sends closer together than this
+  const TYPING_PER_CHAR_MS = 35;
+  const TYPING_MAX_MS = 4000;
+  const JITTER_MIN_MS = 300;
+  const JITTER_MAX_MS = 1200;
+  const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, Math.max(0, ms)));
+  // Gaussian-ish jitter (average of two uniforms) clusters near the middle,
+  // which looks more human than a flat random.
+  const jitter = (): number =>
+    Math.round(JITTER_MIN_MS + ((Math.random() + Math.random()) / 2) * (JITTER_MAX_MS - JITTER_MIN_MS));
+
+  let sendChain: Promise<void> = Promise.resolve();
+  let lastSentAt = 0;
+  // Serializes every outbound message and enforces the minimum gap, so a burst
+  // (e.g. reminders fanning out to several groups) goes out paced, not at once.
+  const enqueueSend = (task: () => Promise<void>): Promise<void> => {
+    const run = sendChain.then(async () => {
+      if (config.humanizeSending) {
+        const wait = SEND_MIN_GAP_MS - (Date.now() - lastSentAt);
+        if (wait > 0) await sleep(wait);
+      }
+      await task();
+      lastSentAt = Date.now();
+    });
+    sendChain = run.catch(() => undefined); // keep the chain alive past a failure
+    return run;
   };
 
   // Caps how many times a single message is retried, so a permanently
@@ -200,11 +233,39 @@ export async function startWhatsApp(onMessage: MessageHandler): Promise<WhatsApp
 
     async sendText(chatId, text, mentionJids) {
       if (!socket) throw new Error('WhatsApp socket not ready');
-      const sent = await socket.sendMessage(chatId, {
-        text,
-        ...(mentionJids?.length ? { mentions: mentionJids } : {}),
+      return enqueueSend(async () => {
+        const s = socket;
+        if (!s) return;
+        if (config.humanizeSending) {
+          // Show "typing…" for a spell proportional to the message, then pause,
+          // then send — the shape a person's reply has.
+          try {
+            await s.sendPresenceUpdate('composing', chatId);
+          } catch {
+            // presence is best-effort; never let it block the actual reply
+          }
+          await sleep(Math.min(TYPING_MAX_MS, text.length * TYPING_PER_CHAR_MS) + jitter());
+          try {
+            await s.sendPresenceUpdate('paused', chatId);
+          } catch {
+            // ignore
+          }
+        }
+        const sent = await s.sendMessage(chatId, {
+          text,
+          ...(mentionJids?.length ? { mentions: mentionJids } : {}),
+        });
+        rememberSent(sent?.key?.id, sent?.message);
       });
-      rememberSent(sent?.key?.id, sent?.message);
+    },
+
+    async markRead(message) {
+      if (!socket || !config.humanizeSending) return;
+      try {
+        await socket.readMessages([message.raw.key]);
+      } catch {
+        // read receipts are best-effort
+      }
     },
 
     async downloadMedia(message) {

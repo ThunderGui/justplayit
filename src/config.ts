@@ -58,6 +58,13 @@ const schema = z.object({
   WHATSAPP_ENABLED: z.coerce.number().default(1),
 
   /**
+   * Human-like sending: paces replies, shows a brief "typing…" before each,
+   * never bursts, and reads the commands it answers. Set to 0 to send
+   * instantly (useful in development). On by default.
+   */
+  WA_HUMANIZE: z.coerce.number().default(1),
+
+  /**
    * Link by pairing code instead of QR. Set to the bot's own number in
    * international format, digits only (e.g. 4915112345678).
    *
@@ -97,6 +104,8 @@ export const config = {
     sessionSecret: env.SESSION_SECRET,
   },
   whatsappEnabled: env.WHATSAPP_ENABLED === 1,
+  /** Pace + typing + read receipts, to look less like a bot. */
+  humanizeSending: env.WA_HUMANIZE === 1,
   /** Digits only; empty means link by QR code instead. */
   whatsappPairingNumber: env.WHATSAPP_PAIRING_NUMBER.replace(/\D/g, ''),
   playtomic:
