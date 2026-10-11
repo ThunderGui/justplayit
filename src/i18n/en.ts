@@ -189,6 +189,20 @@ export const en = {
     payHandle: (handle: string) => `Payment details: ${handle}`,
   },
 
+  /* ---- places (admin manage from chat) ---- */
+  places: {
+    header: 'Places',
+    empty: (prefix: string) => `No places yet. An admin can add one with ${prefix}place add <name>.`,
+    added: (name: string) => `Added place: ${name}.`,
+    removed: (name: string) => `Removed place: ${name}.`,
+    deactivated: (name: string) =>
+      `Hid place: ${name}. It stays on past bookings but is no longer offered for new ones.`,
+    exists: (name: string) => `There is already a place called ${name}.`,
+    notFound: (name: string) => `I have no place called "${name}".`,
+    usage: (prefix: string) =>
+      `To manage places:\n  ${prefix}place add <name> | <address>\n  ${prefix}place remove <name>\n  ${prefix}place list`,
+  },
+
   /* ---- misc ---- */
   misc: {
     reportThanks: (id: number) => `Thanks — logged as report #${id}. The admins will see it.`,

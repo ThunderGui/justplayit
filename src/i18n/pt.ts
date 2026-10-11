@@ -179,6 +179,19 @@ export const pt: Dict = {
     payHandle: (handle: string) => `Dados de pagamento: ${handle}`,
   },
 
+  places: {
+    header: 'Locais',
+    empty: (prefix: string) => `Ainda não há locais. Um administrador pode adicionar com ${prefix}place add <nome>.`,
+    added: (name: string) => `Local adicionado: ${name}.`,
+    removed: (name: string) => `Local removido: ${name}.`,
+    deactivated: (name: string) =>
+      `Local ocultado: ${name}. Fica nas reservas antigas, mas deixa de ser oferecido.`,
+    exists: (name: string) => `Já existe um local chamado ${name}.`,
+    notFound: (name: string) => `Não tenho nenhum local chamado "${name}".`,
+    usage: (prefix: string) =>
+      `Gerir locais:\n  ${prefix}place add <nome> | <endereço>\n  ${prefix}place remove <nome>\n  ${prefix}place list`,
+  },
+
   misc: {
     reportThanks: (id: number) => `Obrigado — registado como reporte #${id}. Os administradores vão ver.`,
     reportEmpty: 'Descreve o problema ou a ideia a seguir ao comando.',

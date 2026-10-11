@@ -18,7 +18,7 @@ import { approveClaim, claimPayment, rejectClaim } from '../domain/payments.js';
 import { setPending, takePending } from '../domain/pending.js';
 import { cooldownRemainingHours, pendingReminders, recordReminder } from '../domain/reminders.js';
 import { listMembers } from '../domain/groups.js';
-import { listPlaces, resolvePlace } from '../domain/places.js';
+import { createPlace, deletePlace, listPlaces, resolvePlace } from '../domain/places.js';
 import type { Settings } from '../domain/settings.js';
 import { getSettings } from '../domain/settings.js';
 import {
@@ -134,6 +134,8 @@ export function handleCommand(cmd: ParsedCommand, ctx: CommandContext): Outgoing
       return handleRemind(cmd, ctx);
     case 'settle':
       return handleSettle(cmd, ctx);
+    case 'places':
+      return handlePlaces(cmd, ctx);
     case 'report':
       return handleReport(cmd, ctx);
     case 'privacy':
@@ -933,6 +935,59 @@ export function settlementMessages(
       lines.map((l) => l.userId).filter((id) => id !== booking.payer_id),
     ),
   ];
+}
+
+/* ------------------------------------------------------------------ */
+/* places (list for everyone; add/remove for admins)                   */
+/* ------------------------------------------------------------------ */
+
+function handlePlaces(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] {
+  const { dict, settings } = ctx;
+  const sub = (cmd.args[0] ?? '').toLowerCase();
+  const prefix = settings.commandPrefix;
+
+  // Bare "places" or "places list" — anyone can see the club list.
+  if (sub === '' || sub === 'list') {
+    const places = listPlaces(ctx.groupId);
+    if (places.length === 0) return [reply(dict.places.empty(prefix))];
+    const lines = places.map((p) => `  • ${p.name}${p.address ? ` — ${p.address}` : ''}`);
+    return [reply(`*${dict.places.header}*\n${lines.join('\n')}`)];
+  }
+
+  // Everything below changes the list, so it is admin-only.
+  if (!ctx.isAdmin) return [reply(dict.common.adminOnly)];
+
+  if (sub === 'add') {
+    // Name, optionally "name | address".
+    const rest = cmd.rest.replace(/^\s*add\s+/i, '').trim();
+    if (!rest) return [reply(dict.places.usage(prefix))];
+    const [namePart, ...addrParts] = rest.split('|');
+    const name = namePart!.trim();
+    const address = addrParts.join('|').trim() || null;
+    if (!name) return [reply(dict.places.usage(prefix))];
+
+    if (resolvePlace(name, ctx.groupId).place) return [reply(dict.places.exists(name))];
+    createPlace({ groupId: ctx.groupId, name, address });
+    return [reply(dict.places.added(name))];
+  }
+
+  if (sub === 'remove' || sub === 'delete' || sub === 'rm') {
+    const name = cmd.rest.replace(/^\s*(remove|delete|rm)\s+/i, '').trim();
+    if (!name) return [reply(dict.places.usage(prefix))];
+    const resolved = resolvePlace(name, ctx.groupId);
+    if (resolved.ambiguous) return [reply(dict.booking.ambiguousPlace(resolved.ambiguous.map((p) => p.name).join(', ')))];
+    if (!resolved.place) return [reply(dict.places.notFound(name))];
+    const outcome = deletePlace(resolved.place.id);
+    return [
+      reply(
+        outcome === 'deactivated'
+          ? dict.places.deactivated(resolved.place.name)
+          : dict.places.removed(resolved.place.name),
+      ),
+    ];
+  }
+
+  return [reply(dict.places.usage(prefix))];
 }
 
 /* ------------------------------------------------------------------ */

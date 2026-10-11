@@ -18,6 +18,7 @@ export function helpText(dict: Dict, settings: Settings, isAdmin: boolean): stri
     `${p}balance — who owes whom (always answered privately)`,
     `${p}confirm <name> [amount] — record that you paid someone`,
     `${p}remind [name] — privately nudge whoever owes you`,
+    `${p}places — the list of clubs`,
     `${p}report <text> — report a bug or suggest an improvement`,
     `${p}help — this message`,
     '',
@@ -55,6 +56,7 @@ export function helpText(dict: Dict, settings: Settings, isAdmin: boolean): stri
       `${p}settle <id> — close a game and split the cost now`,
       `${p}approve <payment-id> / ${p}reject <payment-id>`,
       `${p}balance — also shows the whole group's balance`,
+      `${p}place add <name> | <address>  ·  ${p}place remove <name>`,
       'Everything else is configured in the web console.',
     );
   }

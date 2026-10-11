@@ -180,6 +180,19 @@ export const de: Dict = {
     payHandle: (handle: string) => `Zahlungsdaten: ${handle}`,
   },
 
+  places: {
+    header: 'Orte',
+    empty: (prefix: string) => `Noch keine Orte. Ein Admin kann einen mit ${prefix}place add <Name> anlegen.`,
+    added: (name: string) => `Ort hinzugefügt: ${name}.`,
+    removed: (name: string) => `Ort entfernt: ${name}.`,
+    deactivated: (name: string) =>
+      `Ort ausgeblendet: ${name}. Er bleibt bei alten Buchungen, wird aber nicht mehr angeboten.`,
+    exists: (name: string) => `Es gibt bereits einen Ort namens ${name}.`,
+    notFound: (name: string) => `Ich habe keinen Ort namens "${name}".`,
+    usage: (prefix: string) =>
+      `Orte verwalten:\n  ${prefix}place add <Name> | <Adresse>\n  ${prefix}place remove <Name>\n  ${prefix}place list`,
+  },
+
   misc: {
     reportThanks: (id: number) => `Danke — als Meldung #${id} erfasst. Die Admins sehen sie.`,
     reportEmpty: 'Bitte beschreibe das Problem oder die Idee nach dem Befehl.',

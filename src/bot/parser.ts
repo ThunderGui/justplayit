@@ -18,6 +18,7 @@ export type CommandName =
   | 'balance'
   | 'remind'
   | 'settle'
+  | 'places'
   | 'report'
   | 'privacy'
   | 'forgetme'
@@ -57,6 +58,8 @@ const ALIASES: Record<string, CommandName> = {
   remind: 'remind', nudge: 'remind', chase: 'remind', 'remind all': 'remind',
 
   settle: 'settle', close: 'settle',
+
+  places: 'places', place: 'places', venues: 'places', venue: 'places', clubs: 'places', club: 'places',
 
   report: 'report', bug: 'report', suggest: 'report', feedback: 'report',
 
