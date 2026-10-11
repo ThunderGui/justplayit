@@ -3,7 +3,9 @@ import path from 'node:path';
 import { config } from '../config.js';
 import { one, run } from '../db/index.js';
 import { handleCommand, type OutgoingMessage } from '../bot/commands.js';
-import { parseMessage } from '../bot/parser.js';
+import { parseMessage, field, type ParsedCommand } from '../bot/parser.js';
+import { providerFor } from '../providers/index.js';
+import { DateTime } from 'luxon';
 import { getSettings } from '../domain/settings.js';
 import {
   ensureGroup,
@@ -104,6 +106,14 @@ export function createDispatcher(client: WhatsAppClient) {
     const mentionedUserIds = message.mentionedJids
       .map((jid) => upsertUser(jid).id)
       .filter((id) => id !== user.id);
+
+    // For a Playtomic-style link, the match itself carries the date, time and
+    // court — so fetch it now and fill those in, rather than making the user
+    // retype what the platform already knows. If the fetch fails (no creds, a
+    // dead link), the fields stay empty and the handler asks for them as before.
+    if (parsed.command.name === 'external') {
+      await prefillExternalFromLink(parsed.command, settings.timezone);
+    }
 
     let outgoing: OutgoingMessage[];
     try {
@@ -239,6 +249,35 @@ function appendMentionHandles(text: string, mentions: string[], isGroupChat: boo
     .filter((handle) => !text.includes(handle));
 
   return missing.length > 0 ? `${text}\n${missing.join(' ')}` : text;
+}
+
+/**
+ * Fills a `.playtomic`/external command's date, time and court from the live
+ * match the link points to, when a provider recognises it and can read it.
+ * Mutates the parsed command's fields in place; leaves them untouched on any
+ * failure so the normal "I still need date, time" path kicks in.
+ */
+export async function prefillExternalFromLink(cmd: ParsedCommand, timezone: string): Promise<void> {
+  const url = field(cmd.fields, 'url') ?? cmd.args.find((a) => /^https?:\/\//i.test(a));
+  if (!url) return;
+
+  const provider = providerFor(url);
+  if (!provider) return;
+
+  try {
+    const result = await provider.fetch(url);
+    if (!result.ok || !result.match.startsAtIso) return;
+
+    const start = DateTime.fromISO(result.match.startsAtIso, { zone: 'utc' }).setZone(timezone);
+    // Only fill what the user did not type — an explicit value always wins.
+    if (!field(cmd.fields, 'date')) cmd.fields.set('date', start.toFormat('yyyy-LL-dd'));
+    if (!field(cmd.fields, 'time')) cmd.fields.set('time', start.toFormat('HH:mm'));
+    if (!field(cmd.fields, 'court') && result.match.court) {
+      cmd.fields.set('court', result.match.court);
+    }
+  } catch {
+    // Network or parse failure: fall back to asking the user.
+  }
 }
 
 async function saveAttachment(
