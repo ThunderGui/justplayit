@@ -101,7 +101,9 @@ export function createWebApp(deps: WebDeps) {
    * state, so a link to a page is a link to that group's page.
    */
   const groupIdFrom = (req: Request): number => {
-    const raw = Number.parseInt(String(req.query.g ?? ''), 10);
+    // A GET carries the group in ?g=; a POSTed form carries it in the body so
+    // the action lands in the group the page was showing, not the first one.
+    const raw = Number.parseInt(String(req.query.g ?? req.body?.g ?? ''), 10);
     if (Number.isFinite(raw) && findGroupById(raw)) return raw;
     return listAllGroups()[0]?.id ?? 1;
   };
@@ -349,20 +351,22 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.post('/places', (req, res) => {
+    const groupId = groupIdFrom(req);
     const name = String(req.body?.name ?? '').trim();
-    if (!name) return res.redirect('/places?err=A+name+is+required');
+    if (!name) return res.redirect(`/places?g=${groupId}&err=A+name+is+required`);
     try {
-      createPlace({ groupId: groupIdFrom(req), name, address: String(req.body?.address ?? '') });
-      res.redirect(`/places?ok=${encodeURIComponent(`${name} added.`)}`);
+      createPlace({ groupId, name, address: String(req.body?.address ?? '') });
+      res.redirect(`/places?g=${groupId}&ok=${encodeURIComponent(`${name} added.`)}`);
     } catch {
-      res.redirect('/places?err=' + encodeURIComponent('A place with that name already exists.'));
+      res.redirect(`/places?g=${groupId}&err=` + encodeURIComponent('A place with that name already exists.'));
     }
   });
 
   app.post('/places/:id/delete', (req, res) => {
+    const groupId = groupIdFrom(req);
     const outcome = deletePlace(Number(req.params.id));
     res.redirect(
-      `/places?ok=${encodeURIComponent(
+      `/places?g=${groupId}&ok=${encodeURIComponent(
         outcome === 'deactivated'
           ? 'Place hidden — it is still used by existing bookings.'
           : 'Place removed.',
@@ -561,7 +565,7 @@ export function createWebApp(deps: WebDeps) {
 
     setSettings(patch, groupIdFrom(req));
     logger.info('settings updated from web console');
-    res.redirect('/settings?ok=' + encodeURIComponent('Settings saved.'));
+    res.redirect(`/settings?g=${groupIdFrom(req)}&ok=` + encodeURIComponent('Settings saved.'));
   });
 
   app.use((_req, res) => {

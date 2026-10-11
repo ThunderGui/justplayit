@@ -341,7 +341,7 @@ export function placesPage(groupId: number): string {
               <td>${esc(p.name)}</td>
               <td class="muted">${esc(p.address ?? '—')}</td>
               <td>${p.active ? '<span class="pill ok">Active</span>' : '<span class="pill">Hidden</span>'}</td>
-              <td><form method="post" action="/places/${p.id}/delete" class="inline"
+              <td><form method="post" action="/places/${p.id}/delete?g=${groupId}" class="inline"
                     onsubmit="return confirm('Remove ${esc(p.name)}?')">
                     <button class="danger" type="submit">Remove</button></form></td>
             </tr>`,
@@ -353,7 +353,7 @@ export function placesPage(groupId: number): string {
 
   <h2>Add a place</h2>
   <div class="card">
-    <form method="post" action="/places">
+    <form method="post" action="/places?g=${groupId}">
       <div class="row">
         <div>
           <label for="name">Name <span class="hint">What people type when booking</span></label>
@@ -677,7 +677,7 @@ export function settingsPage(groupId: number): string {
   <h1>Settings</h1>
   <p class="sub">Everything the bot needs to run your group.</p>
 
-  <form method="post" action="/settings">
+  <form method="post" action="/settings?g=${groupId}">
     <div class="card">
       <h2 style="margin-top:0">General</h2>
       <p class="muted" style="margin:0 0 12px">
