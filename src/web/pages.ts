@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon';
 import type { BackupFile } from '../domain/backup.js';
+import { listGroups, listMembers, SPORTS, type Group } from '../domain/groups.js';
 import {
   getRoster,
   listAllBookings,
@@ -583,6 +584,64 @@ export function backupsPage(files: BackupFile[]): string {
       downloaded snapshot (renaming it), and start it again. WhatsApp device
       credentials are deliberately not included in snapshots — if you are moving
       to new hardware, simply link the device again by scanning the QR code.
+    </p>
+  </div>`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Groups                                                              */
+/* ------------------------------------------------------------------ */
+
+export function groupsPage(currentGroupId: number): string {
+  const groups = listGroups(true);
+
+  const row = (g: Group): string => {
+    const members = listMembers(g.id).length;
+    const sportOptions = SPORTS.map(
+      (sp) => `<option value="${sp}"${sp === g.sport ? ' selected' : ''}>${esc(sp)}</option>`,
+    ).join('');
+    return `<tr>
+      <td>${g.id === currentGroupId ? '➤ ' : ''}<a href="/?g=${g.id}">${esc(g.name ?? `Group ${g.id}`)}</a></td>
+      <td class="mono" style="font-size:12px">${esc(g.wa_jid)}</td>
+      <td>${members}</td>
+      <td><span class="pill ${g.active ? 'ok' : ''}">${g.active ? 'Active' : 'Hidden'}</span></td>
+      <td>
+        <form method="post" action="/groups/${g.id}" class="inline" style="display:flex;gap:6px;align-items:center">
+          <input type="text" name="name" value="${esc(g.name ?? '')}" placeholder="Name" style="width:150px">
+          <select name="sport">${sportOptions}</select>
+          <label style="font-weight:400;margin:0"><input type="checkbox" name="active" value="1"${g.active ? ' checked' : ''}>active</label>
+          <button class="secondary" type="submit">Save</button>
+        </form>
+      </td>
+    </tr>`;
+  };
+
+  return `
+  <h1>Groups</h1>
+  <p class="sub">
+    Each group is its own world — its own bookings, places, members and balances.
+    Nothing is shared between them. Pick one with the switcher up top to manage it.
+  </p>
+
+  <div class="card">
+    ${
+      groups.length === 0
+        ? '<div class="empty">No groups yet. One is created automatically when the bot is added to a WhatsApp group.</div>'
+        : `<div class="table-wrap"><table>
+            <tr><th>Name</th><th>WhatsApp group</th><th>Members</th><th>Status</th><th>Edit</th></tr>
+            ${groups.map(row).join('')}
+          </table></div>`
+    }
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">About groups</h2>
+    <p class="muted" style="margin:0">
+      Groups register themselves: add the bot to a WhatsApp group and send one
+      command, and it appears here. You cannot create an empty group from the
+      console because a group only means anything once it is tied to a real
+      WhatsApp chat. Rename, set the sport, or hide a finished group above.
+      Hiding a group stops the bot responding there without deleting its history.
     </p>
   </div>`;
 }

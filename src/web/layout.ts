@@ -122,7 +122,13 @@ button.danger, .btn.danger { background: transparent; color: var(--danger); bord
 .empty { color: var(--muted); padding: 22px 0; text-align: center; }
 form.inline { display: inline; }
 .login { max-width: 340px; margin: 12vh auto; }
+header.top .group-switch select { padding: 6px 10px; margin-right: 10px; max-width: 200px; }
 `;
+
+export interface GroupChoice {
+  id: number;
+  label: string;
+}
 
 export interface LayoutOptions {
   title: string;
@@ -130,6 +136,9 @@ export interface LayoutOptions {
   flash?: { kind: 'ok' | 'err'; text: string } | null;
   /** Chrome is hidden on the login page. */
   bare?: boolean;
+  /** Groups the console can act on, and which one is selected. */
+  groups?: GroupChoice[];
+  currentGroupId?: number;
 }
 
 const NAV: [string, string][] = [
@@ -139,14 +148,41 @@ const NAV: [string, string][] = [
   ['/people', 'People'],
   ['/money', 'Money'],
   ['/reports', 'Reports'],
+  ['/groups', 'Groups'],
   ['/settings', 'Settings'],
 ];
 
+/**
+ * Every nav link and the group switcher carry the selected group in `?g=`, so
+ * clicking around the console stays within one group's world until you switch.
+ */
+function withGroup(href: string, groupId?: number): string {
+  if (groupId == null) return href;
+  const sep = href.includes('?') ? '&' : '?';
+  return `${href}${sep}g=${groupId}`;
+}
+
 export function layout(body: string, options: LayoutOptions): string {
+  const g = options.currentGroupId;
   const nav = NAV.map(
     ([href, label]) =>
-      `<a href="${href}"${options.active === href ? ' class="active"' : ''}>${esc(label)}</a>`,
+      `<a href="${withGroup(href, g)}"${options.active === href ? ' class="active"' : ''}>${esc(label)}</a>`,
   ).join('');
+
+  // A switcher only earns its place once there is more than one group.
+  const switcher =
+    options.groups && options.groups.length > 1
+      ? `<form method="get" action="/" class="inline group-switch">
+           <select name="g" onchange="this.form.action=window.location.pathname;this.form.submit()">
+             ${options.groups
+               .map(
+                 (gr) =>
+                   `<option value="${gr.id}"${gr.id === g ? ' selected' : ''}>${esc(gr.label)}</option>`,
+               )
+               .join('')}
+           </select>
+         </form>`
+      : '';
 
   const flash = options.flash
     ? `<div class="flash ${options.flash.kind}">${esc(options.flash.text)}</div>`
@@ -158,6 +194,7 @@ export function layout(body: string, options: LayoutOptions): string {
          <span class="brand">🎾 Just Play It</span>
          <nav>${nav}</nav>
          <span class="spacer"></span>
+         ${switcher}
          <form method="post" action="/logout" class="inline">
            <button class="secondary" type="submit">Sign out</button>
          </form>
