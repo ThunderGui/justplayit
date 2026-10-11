@@ -275,6 +275,12 @@ export async function prefillExternalFromLink(cmd: ParsedCommand, timezone: stri
     if (!field(cmd.fields, 'court') && result.match.court) {
       cmd.fields.set('court', result.match.court);
     }
+    // The venue goes in its own field (not `place`), so the handler uses it
+    // directly as the booking's location — it is authoritative platform data,
+    // not user free-text to validate against the club allowlist.
+    if (!field(cmd.fields, 'place') && result.match.venueName) {
+      cmd.fields.set('venue', result.match.venueName);
+    }
   } catch {
     // Network or parse failure: fall back to asking the user.
   }

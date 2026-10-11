@@ -80,3 +80,27 @@ describe('bare link, no url: label', () => {
     expect(field(cmd.fields, 'time')).toBe('19:00');
   });
 })
+
+describe('venue appears on the first card (no "unknown place")', () => {
+  it('uses the match venue as the booking location immediately', async () => {
+    const { freshDb, user, GROUP } = await import('./helpers.js');
+    const { handleCommand } = await import('../src/bot/commands.js');
+    const { getSettings } = await import('../src/domain/settings.js');
+    const { t } = await import('../src/i18n/index.js');
+    freshDb();
+    const { DateTime } = await import('luxon');
+    const future = DateTime.utc().plus({ days: 3 }).set({ hour: 17, minute: 0, second: 0 }).toISO()!;
+    setProviders([mockProvider(future, 'Court 2')]);
+
+    const cmd = parse('!playtomic https://playtomic.io/m/abc');
+    await prefillExternalFromLink(cmd, 'Europe/Berlin');
+
+    const out = handleCommand(cmd, {
+      groupId: GROUP, user: user('Alice'), isAdmin: false, chatId: 'g',
+      isGroup: true, dict: t('en'), settings: getSettings(GROUP), mentionedUserIds: [],
+    });
+    const text = out.map((m) => m.text).join('\n');
+    expect(text).toContain('Ocean');          // the venue, right away
+    expect(text).not.toContain('unknown place');
+  });
+})

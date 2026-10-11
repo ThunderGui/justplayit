@@ -247,7 +247,13 @@ function handleBook(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] 
 /* ------------------------------------------------------------------ */
 
 const EXTERNAL_TEMPLATE = (prefix: string) =>
-  `${prefix}playtomic <link> — just paste the Playtomic link; the rest is read from it.`;
+  [
+    `${prefix}playtomic <link>`,
+    'Just paste the Playtomic link — date, time, court, venue and players are read from it.',
+    'Optionally add a note:',
+    `  ${prefix}playtomic <link>`,
+    '  notes: bring water',
+  ].join('\n');
 
 function handleExternal(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] {
   const { dict, settings } = ctx;
@@ -277,10 +283,16 @@ function handleExternal(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessag
   let customPlace: string | null = null;
   const placeInput = field(f, 'place');
   if (placeInput) {
+    // An explicit `place:` is user intent, so resolve it against the club list.
     const resolved = resolveBookingPlace(placeInput, ctx);
     if ('error' in resolved) return [reply(resolved.error)];
     placeId = resolved.placeId;
     customPlace = resolved.customPlace;
+  } else {
+    // Otherwise take the venue the platform reported (filled in by the
+    // dispatcher from the match). It is authoritative, so it is used as-is
+    // rather than validated against the group's own club list.
+    customPlace = field(f, 'venue') ?? null;
   }
 
   const provider = field(f, 'provider') ?? providerFromUrl(urlInput);
