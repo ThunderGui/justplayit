@@ -3,7 +3,6 @@ import {
   DisconnectReason,
   fetchLatestBaileysVersion,
   isJidGroup,
-  makeCacheableSignalKeyStore,
   makeWASocket,
   useMultiFileAuthState,
   type WASocket,
@@ -97,7 +96,12 @@ export async function startWhatsApp(onMessage: MessageHandler): Promise<WhatsApp
       version,
       auth: {
         creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, logger as never),
+        // Deliberately NOT wrapped in makeCacheableSignalKeyStore: a stale
+        // cached Signal session made the bot encrypt replies with an outdated
+        // ratchet, so recipients (notably iOS) saw "Waiting for this message"
+        // until a restart cleared the cache. Reading straight from disk is a
+        // touch slower but keeps our view of each session current.
+        keys: state.keys,
       },
       // The bot answers commands; it does not need to look "online".
       markOnlineOnConnect: false,
