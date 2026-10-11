@@ -1,0 +1,26 @@
+# Auto-merges Dependabot PRs once CI is green — but only patch and minor
+# updates. Major bumps are left open for a human to review. The merge waits for
+# the required "build-test" check because the repo has branch protection that
+# requires it, so nothing merges on a red build.
+name: Dependabot auto-merge
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dependabot/fetch-metadata@v2
+        id: meta
+        with:
+          github-token: "${{ secrets.GITHUB_TOKEN }}"
+      - name: Enable auto-merge for patch and minor
+        if: steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
