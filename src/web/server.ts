@@ -503,15 +503,8 @@ export function createWebApp(deps: WebDeps) {
     res.redirect('/reports?ok=' + encodeURIComponent('Report closed.'));
   });
 
-  app.get('/settings', async (req, res) => {
-    let groups: { id: string; subject: string }[] = [];
-    try {
-      if (deps.isConnected()) groups = await deps.listGroups();
-    } catch (err) {
-      logger.error({ err }, 'could not list WhatsApp groups');
-    }
-
-    sendFor(res, req, settingsPage(groups, groupIdFrom(req)), {
+  app.get('/settings', (req, res) => {
+    sendFor(res, req, settingsPage(groupIdFrom(req)), {
       title: 'Settings',
       active: '/settings',
       flash: flashFrom(req),
@@ -541,7 +534,6 @@ export function createWebApp(deps: WebDeps) {
       : current.paymentConfirmationMode;
 
     const patch: Partial<Settings> = {
-      groupJid: String(body.groupJid ?? '').trim(),
       commandPrefix: String(body.commandPrefix ?? '!').trim().slice(0, 3) || '!',
       language,
       timezone: String(body.timezone ?? current.timezone).trim() || current.timezone,

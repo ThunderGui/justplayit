@@ -22,7 +22,6 @@ export interface Settings {
   language: Lang;
   timezone: string;
   currency: string;
-  groupJid: string;
   commandPrefix: string;
   paymentConfirmationMode: PaymentConfirmationMode;
   allowCustomPlaces: boolean;
@@ -45,7 +44,6 @@ export const DEFAULT_SETTINGS: Settings = {
   language: 'en',
   timezone: 'Europe/Berlin',
   currency: 'EUR',
-  groupJid: '',
   commandPrefix: '!',
   paymentConfirmationMode: 'both',
   allowCustomPlaces: true,
@@ -76,7 +74,6 @@ const SERIALISERS: { [K in Key]: (v: Settings[K]) => string } = {
   language: (v) => v,
   timezone: (v) => v,
   currency: (v) => v,
-  groupJid: (v) => v,
   commandPrefix: (v) => v,
   paymentConfirmationMode: (v) => v,
   allowCustomPlaces: (v) => (v ? '1' : '0'),

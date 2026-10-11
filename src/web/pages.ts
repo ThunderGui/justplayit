@@ -1,6 +1,6 @@
 import { DateTime } from 'luxon';
 import type { BackupFile } from '../domain/backup.js';
-import { listGroups, listMembers, SPORTS, type Group } from '../domain/groups.js';
+import { findGroupById, listGroups, listMembers, SPORTS, type Group } from '../domain/groups.js';
 import {
   getRoster,
   listAllBookings,
@@ -54,13 +54,13 @@ export function loginPage(error?: string): string {
 /* ------------------------------------------------------------------ */
 
 export function dashboardPage(connected: boolean, groupId: number): string {
-  const settings = getSettings(groupId);
+  const group = findGroupById(groupId);
   const upcoming = listUpcoming(groupId, 10);
   const claims = listPendingClaims(groupId);
   const admins = listUsers().filter((u) => u.is_admin === 1);
 
   const setupIssues: string[] = [];
-  if (!settings.groupJid) setupIssues.push('No WhatsApp group linked yet.');
+  if (!group?.wa_jid) setupIssues.push('No WhatsApp group linked yet.');
   if (admins.length === 0) setupIssues.push('No admin user recognised yet.');
   if (listPlaces(groupId).length === 0) setupIssues.push('No places added yet.');
 
@@ -77,8 +77,8 @@ export function dashboardPage(connected: boolean, groupId: number): string {
           : '<span class="pill warn">Not connected</span> <span class="muted">— check the container logs for the QR code</span>'
       }</td></tr>
       <tr><td>Group</td><td>${
-        settings.groupJid
-          ? `<code>${esc(settings.groupJid)}</code>`
+        group?.wa_jid
+          ? `<code>${esc(group.wa_jid)}</code>`
           : '<span class="muted">not linked</span>'
       }</td></tr>
       <tr><td>Admins</td><td>${admins.map((a) => esc(displayName(a))).join(', ') || '<span class="muted">none</span>'}</td></tr>
@@ -670,15 +670,8 @@ function checkbox(name: string, checked: boolean, label: string, hint?: string):
   </label>`;
 }
 
-export function settingsPage(groups: { id: string; subject: string }[], groupId: number): string {
+export function settingsPage(groupId: number): string {
   const s: Settings = getSettings(groupId);
-
-  const groupOptions = groups
-    .map(
-      (g) =>
-        `<option value="${esc(g.id)}"${g.id === s.groupJid ? ' selected' : ''}>${esc(g.subject)}</option>`,
-    )
-    .join('');
 
   return `
   <h1>Settings</h1>
@@ -686,19 +679,12 @@ export function settingsPage(groups: { id: string; subject: string }[], groupId:
 
   <form method="post" action="/settings">
     <div class="card">
-      <h2 style="margin-top:0">WhatsApp</h2>
-      <label for="groupJid">Group
-        <span class="hint">The bot only responds in this group. It ignores every other chat.</span>
-      </label>
-      ${
-        groups.length > 0
-          ? `<select id="groupJid" name="groupJid"><option value="">— none —</option>${groupOptions}</select>`
-          : `<input type="text" id="groupJid" name="groupJid" value="${esc(s.groupJid)}"
-                placeholder="1234567890-1234567890@g.us">
-             <p class="muted" style="margin:8px 0 0">
-               Not connected yet, so the group list is empty. Link the device first, or paste the group ID.
-             </p>`
-      }
+      <h2 style="margin-top:0">General</h2>
+      <p class="muted" style="margin:0 0 12px">
+        The bot serves every WhatsApp group it is added to, and each one is its own
+        space. Use the switcher at the top of the page to choose which group these
+        settings apply to.
+      </p>
 
       <div class="row">
         <div>
