@@ -89,6 +89,10 @@ export const de: Dict = {
     badDate: 'Dieses Datum konnte ich nicht lesen. Versuch z. B. 03.09, morgen oder freitag.',
     badTime: 'Diese Uhrzeit konnte ich nicht lesen. Versuch z. B. 19:00.',
     badCost: 'Diesen Betrag konnte ich nicht lesen. Schick nur die Zahl, z. B. 40 oder 40,50.',
+    editUsage: (prefix: string) =>
+      `Buchung ändern:\n  ${prefix}edit <ID>\n  date: 05/09\n  time: 20:00\n` +
+      '(nur die angegebenen Felder ändern sich — nur Ersteller oder Admin)',
+    updated: (code: string) => `Buchung *${code}* aktualisiert.`,
   },
 
   roster: {
@@ -123,6 +127,12 @@ export const de: Dict = {
 
   payment: {
     balanceAllClear: 'Alles ausgeglichen — in beide Richtungen offen: nichts. 🎉',
+    handleSet: (handle: string) => `Zahlungsdaten gespeichert: ${handle}. Andere sehen sie, wenn sie dir Geld schulden.`,
+    handleCleared: 'Zahlungsdaten gelöscht.',
+    handleCurrent: (handle: string, prefix: string) =>
+      `Deine Zahlungsdaten: ${handle}.\nÄndern mit ${prefix}payment <neu>, löschen mit ${prefix}payment clear.`,
+    handleNone: (prefix: string) =>
+      `Du hast keine Zahlungsdaten hinterlegt. Füge welche hinzu: ${prefix}payment paypal.me/du oder ${prefix}payment <IBAN>.`,
     balanceHeader: 'Dein Kontostand',
     youOwe: (name: string, amount: string) => `Du schuldest ${name}: ${amount}`,
     owesYou: (name: string, amount: string) => `${name} schuldet dir: ${amount}`,

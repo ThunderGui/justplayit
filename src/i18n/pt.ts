@@ -89,6 +89,10 @@ export const pt: Dict = {
     badDate: 'Não consegui ler essa data. Tenta algo como 03/09, amanhã ou sexta.',
     badTime: 'Não consegui ler essa hora. Tenta algo como 19:00.',
     badCost: 'Não consegui ler esse valor. Envia só o número, por exemplo 40 ou 40,50.',
+    editUsage: (prefix: string) =>
+      `Alterar uma reserva:\n  ${prefix}edit <id>\n  date: 05/09\n  time: 20:00\n` +
+      '(só mudam os campos que incluíres — apenas criador ou admin)',
+    updated: (code: string) => `Reserva *${code}* atualizada.`,
   },
 
   roster: {
@@ -123,6 +127,12 @@ export const pt: Dict = {
 
   payment: {
     balanceAllClear: 'Estás em dia — nada a dever nem a receber. 🎉',
+    handleSet: (handle: string) => `Dados de pagamento guardados: ${handle}. As pessoas veem-nos quando te devem dinheiro.`,
+    handleCleared: 'Dados de pagamento removidos.',
+    handleCurrent: (handle: string, prefix: string) =>
+      `Os teus dados de pagamento: ${handle}.\nAltera com ${prefix}payment <novo>, ou ${prefix}payment clear para remover.`,
+    handleNone: (prefix: string) =>
+      `Não tens dados de pagamento. Adiciona com ${prefix}payment paypal.me/tu ou ${prefix}payment <IBAN>.`,
     balanceHeader: 'O teu saldo',
     youOwe: (name: string, amount: string) => `Deves a ${name}: ${amount}`,
     owesYou: (name: string, amount: string) => `${name} deve-te: ${amount}`,

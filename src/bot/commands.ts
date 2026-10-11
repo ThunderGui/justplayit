@@ -4,6 +4,8 @@ import {
   cancellationDeadline,
   createBooking,
   createExternalBooking,
+  editBooking,
+  affectedUserIds,
   findBookingByCode,
   getRoster,
   isExternal,
@@ -26,10 +28,11 @@ import {
   displayName,
   findUserById,
   listUsers,
+  setPaymentHandle,
   type User,
 } from '../domain/users.js';
 import type { Dict } from '../i18n/index.js';
-import { formatDateTime, nowIso, parseDateTime, parseDuration, toUtcIso } from '../util/datetime.js';
+import { formatDateTime, nowIso, parseDate, parseDateTime, parseDuration, parseTime, toUtcIso } from '../util/datetime.js';
 import { formatMoney, parseMoneyToCents } from '../util/money.js';
 import { balanceCard, bookingCard, bookingList } from './render.js';
 import { field, type ParsedCommand } from './parser.js';
@@ -136,6 +139,10 @@ export function handleCommand(cmd: ParsedCommand, ctx: CommandContext): Outgoing
       return handleSettle(cmd, ctx);
     case 'places':
       return handlePlaces(cmd, ctx);
+    case 'edit':
+      return handleEditBooking(cmd, ctx);
+    case 'payment':
+      return handlePayment(cmd, ctx);
     case 'report':
       return handleReport(cmd, ctx);
     case 'privacy':
@@ -935,6 +942,115 @@ export function settlementMessages(
       lines.map((l) => l.userId).filter((id) => id !== booking.payer_id),
     ),
   ];
+}
+
+/* ------------------------------------------------------------------ */
+/* edit a booking (creator or admin)                                   */
+/* ------------------------------------------------------------------ */
+
+function handleEditBooking(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] {
+  const { dict, settings } = ctx;
+  const code = cmd.args[0];
+  if (!code || cmd.fields.size === 0) return [reply(dict.booking.editUsage(settings.commandPrefix))];
+
+  const booking = findBookingByCode(code);
+  if (!booking) return [reply(dict.booking.notFound(code.toUpperCase()))];
+  if (booking.creator_id !== ctx.user.id && !ctx.isAdmin) {
+    return [reply(dict.booking.cancelNotAllowed)];
+  }
+
+  const f = cmd.fields;
+  const tz = settings.timezone;
+
+  // A new start can be given as date, time, or both — the half not given keeps
+  // the booking's current value, so ".edit X / time: 20:00" just moves the hour.
+  let startsAtIso: string | undefined;
+  const dIn = field(f, 'date');
+  const tIn = field(f, 'time');
+  if (dIn || tIn) {
+    const base = DateTime.fromISO(booking.starts_at, { zone: 'utc' }).setZone(tz);
+    const date = dIn ? parseDate(dIn, tz) : base;
+    const time = tIn ? parseTime(tIn) : { hour: base.hour, minute: base.minute };
+    if (!date) return [reply(dict.booking.badDate)];
+    if (!time) return [reply(dict.booking.badTime)];
+    startsAtIso = toUtcIso(date.set({ hour: time.hour, minute: time.minute, second: 0, millisecond: 0 }));
+  }
+
+  const costIn = field(f, 'cost');
+  let totalCostCents: number | undefined;
+  if (costIn) {
+    const parsed = parseMoneyToCents(costIn);
+    if (parsed == null) return [reply(dict.booking.badCost)];
+    totalCostCents = parsed;
+  }
+
+  let placeId: number | null | undefined;
+  let customPlace: string | null | undefined;
+  const placeIn = field(f, 'place');
+  if (placeIn) {
+    const resolved = resolveBookingPlace(placeIn, ctx);
+    if ('error' in resolved) return [reply(resolved.error)];
+    placeId = resolved.placeId;
+    customPlace = resolved.customPlace;
+  }
+
+  const result = editBooking(booking.id, {
+    startsAtIso,
+    totalCostCents,
+    durationMin: field(f, 'duration') ? (parseDuration(field(f, 'duration')!) ?? undefined) : undefined,
+    minPlayers: toPositiveInt(field(f, 'min')),
+    maxPlayers: toPositiveInt(field(f, 'max')),
+    cancelLimitHours: toPositiveInt(field(f, 'cancel')),
+    placeId,
+    customPlace,
+    court: field(f, 'court'),
+    notes: field(f, 'notes'),
+  });
+
+  if (!result.ok) return [reply(bookingErrorText(result.reason, ctx, result))];
+
+  // A moved game is announced to the group, so everyone in it hears; other
+  // edits just confirm to whoever made the change.
+  if (result.scheduleChanged) {
+    return [
+      toGroup(
+        dict.booking.rescheduled(
+          result.booking.code,
+          formatDateTime(result.previousStartsAt, tz, settings.language),
+          formatDateTime(result.booking.starts_at, tz, settings.language),
+        ),
+        affectedUserIds(result.booking.id),
+      ),
+    ];
+  }
+  return [reply(`${dict.booking.updated(result.booking.code)}\n\n${bookingCard(result.booking, dict, settings)}`)];
+}
+
+/* ------------------------------------------------------------------ */
+/* payment details (your own handle)                                   */
+/* ------------------------------------------------------------------ */
+
+function handlePayment(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] {
+  const { dict, settings } = ctx;
+  const value = cmd.rest.trim();
+  const me = findUserById(ctx.user.id) ?? ctx.user;
+
+  // No argument: show what is set, or how to set it.
+  if (!value) {
+    return [
+      me.payment_handle
+        ? reply(dict.payment.handleCurrent(me.payment_handle, settings.commandPrefix))
+        : reply(dict.payment.handleNone(settings.commandPrefix)),
+    ];
+  }
+
+  if (/^(clear|none|remove|delete)$/i.test(value)) {
+    setPaymentHandle(ctx.user.id, null);
+    return [reply(dict.payment.handleCleared)];
+  }
+
+  setPaymentHandle(ctx.user.id, value);
+  return [reply(dict.payment.handleSet(value))];
 }
 
 /* ------------------------------------------------------------------ */

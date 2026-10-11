@@ -92,6 +92,10 @@ export const en = {
     badDate: 'I could not read that date. Try something like 03/09, tomorrow, or friday.',
     badTime: 'I could not read that time. Try something like 19:00 or 7pm.',
     badCost: 'I could not read that amount. Send just the number, for example 40 or 40.50.',
+    editUsage: (prefix: string) =>
+      `To change a booking:\n  ${prefix}edit <id>\n  date: 05/09\n  time: 20:00\n` +
+      '(only the fields you include change — creator or admin only)',
+    updated: (code: string) => `Booking *${code}* updated.`,
   },
 
   /* ---- join / leave ---- */
@@ -128,6 +132,12 @@ export const en = {
   /* ---- payments ---- */
   payment: {
     balanceAllClear: 'You are all square — nothing owed in either direction. 🎉',
+    handleSet: (handle: string) => `Saved your payment details: ${handle}. People will see this when you are owed money.`,
+    handleCleared: 'Cleared your payment details.',
+    handleCurrent: (handle: string, prefix: string) =>
+      `Your payment details: ${handle}.\nChange them with ${prefix}payment <new>, or ${prefix}payment clear to remove.`,
+    handleNone: (prefix: string) =>
+      `You have no payment details set. Add some with ${prefix}payment paypal.me/you or ${prefix}payment <IBAN>.`,
     balanceHeader: 'Your balance',
     youOwe: (name: string, amount: string) => `You owe ${name}: ${amount}`,
     owesYou: (name: string, amount: string) => `${name} owes you: ${amount}`,
