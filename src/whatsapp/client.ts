@@ -62,6 +62,31 @@ export async function startWhatsApp(onMessage: MessageHandler): Promise<WhatsApp
   // Baileys tears the socket down on most errors; a fresh one is cheap.
   let reconnectAttempts = 0;
 
+  // When a recipient (notably iOS) fails to decrypt a message we sent, it asks
+  // for a retry. Baileys answers by calling getMessage() to fetch the original
+  // and re-encrypting it — without this the recipient is stuck on "Waiting for
+  // this message." We keep a bounded cache of what we have sent, keyed by id.
+  const SENT_CACHE_MAX = 1000;
+  const sentMessages = new Map<string, proto.IMessage>();
+  const rememberSent = (id: string | null | undefined, msg: proto.IMessage | null | undefined): void => {
+    if (!id || !msg) return;
+    sentMessages.set(id, msg);
+    if (sentMessages.size > SENT_CACHE_MAX) {
+      const oldest = sentMessages.keys().next().value;
+      if (oldest) sentMessages.delete(oldest);
+    }
+  };
+
+  // Caps how many times a single message is retried, so a permanently
+  // undecryptable message cannot loop forever.
+  const retryCounters = new Map<string, unknown>();
+  const msgRetryCounterCache = {
+    get: <T>(key: string): T | undefined => retryCounters.get(key) as T | undefined,
+    set: <T>(key: string, value: T): void => void retryCounters.set(key, value),
+    del: (key: string): void => void retryCounters.delete(key),
+    flushAll: (): void => retryCounters.clear(),
+  };
+
   const usePairingCode = config.whatsappPairingNumber.length > 0;
   if (usePairingCode) {
     logger.info('linking by pairing code (no QR scan needed)');
@@ -79,6 +104,9 @@ export async function startWhatsApp(onMessage: MessageHandler): Promise<WhatsApp
       syncFullHistory: false,
       logger: logger as never,
       generateHighQualityLinkPreview: false,
+      msgRetryCounterCache,
+      // Lets Baileys resend a message a recipient could not decrypt.
+      getMessage: async (key) => (key.id ? sentMessages.get(key.id) : undefined),
     });
 
     socket.ev.on('creds.update', saveCreds);
@@ -168,10 +196,11 @@ export async function startWhatsApp(onMessage: MessageHandler): Promise<WhatsApp
 
     async sendText(chatId, text, mentionJids) {
       if (!socket) throw new Error('WhatsApp socket not ready');
-      await socket.sendMessage(chatId, {
+      const sent = await socket.sendMessage(chatId, {
         text,
         ...(mentionJids?.length ? { mentions: mentionJids } : {}),
       });
+      rememberSent(sent?.key?.id, sent?.message);
     },
 
     async downloadMedia(message) {
