@@ -271,6 +271,11 @@ export async function prefillExternalFromLink(cmd: ParsedCommand, timezone: stri
     const result = await provider.fetch(url);
     if (!result.ok || !result.match.startsAtIso) return;
 
+    // Keep the fetched match so the handler can build one complete card at
+    // creation (right provider, roster, slots) instead of a bare card now and
+    // a second enriched one after the first background sync.
+    cmd.prefetchedMatch = result.match;
+
     const start = DateTime.fromISO(result.match.startsAtIso, { zone: 'utc' }).setZone(timezone);
     // Only fill what the user did not type — an explicit value always wins.
     if (!field(cmd.fields, 'date')) cmd.fields.set('date', start.toFormat('yyyy-LL-dd'));

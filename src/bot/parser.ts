@@ -80,6 +80,8 @@ const MULTI_WORD_ALIASES = Object.keys(ALIASES)
   .filter((a) => a.includes(' '))
   .sort((a, b) => b.length - a.length);
 
+import type { ExternalMatch } from '../providers/types.js';
+
 export interface ParsedCommand {
   name: CommandName;
   /** What the user actually typed, for error messages. */
@@ -90,6 +92,8 @@ export interface ParsedCommand {
   rest: string;
   /** `key: value` / `key=value` pairs, one per line or inline. */
   fields: Map<string, string>;
+  /** Set by the dispatcher when an external link was fetched up front. */
+  prefetchedMatch?: ExternalMatch | null;
 }
 
 export interface ParseOptions {

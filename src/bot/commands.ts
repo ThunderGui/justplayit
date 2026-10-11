@@ -7,6 +7,8 @@ import {
   editBooking,
   affectedUserIds,
   findBookingByCode,
+  findBookingById,
+  updateBooking,
   getRoster,
   isExternal,
   joinBooking,
@@ -35,6 +37,7 @@ import type { Dict } from '../i18n/index.js';
 import { formatDateTime, nowIso, parseDate, parseDateTime, parseDuration, parseTime, toUtcIso } from '../util/datetime.js';
 import { formatMoney, parseMoneyToCents } from '../util/money.js';
 import { balanceCard, bookingCard, bookingList, sportEmoji } from './render.js';
+import { providerFor } from '../providers/index.js';
 import { field, type ParsedCommand } from './parser.js';
 import { helpText } from './help.js';
 import { run } from '../db/index.js';
@@ -304,7 +307,8 @@ function handleExternal(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessag
     customPlace = field(f, 'venue') ?? null;
   }
 
-  const provider = field(f, 'provider') ?? providerFromUrl(urlInput);
+  const match = cmd.prefetchedMatch;
+  const provider = match?.provider ?? field(f, 'provider') ?? providerFromUrl(urlInput);
   const durationMin = field(f, 'duration') ? parseDuration(field(f, 'duration')!) : undefined;
 
   const result = createExternalBooking({
@@ -325,15 +329,32 @@ function handleExternal(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessag
     return [reply(bookingErrorText(result.reason, ctx, result))];
   }
 
+  // If the link was fetched up front, fill the roster/slots now and mark the
+  // booking synced — so this single card is already complete and the sync job
+  // does not post a second one. If it was not fetched, the first sync announces.
+  if (match) {
+    updateBooking(result.booking.id, {
+      external_status: match.status,
+      external_players: JSON.stringify(match.players),
+      external_slots_total: match.slotsTotal,
+      external_slots_free: match.slotsFree,
+      external_synced_at: nowIso(),
+      external_sync_error: null,
+    });
+  }
+  const fresh = findBookingById(result.booking.id) ?? result.booking;
+
   return [
     toGroup(
-      `${sportEmoji(result.booking)} ${dict.external.created(result.booking.code, provider)}\n\n${bookingCard(result.booking, dict)}`,
+      `${sportEmoji(fresh)} ${dict.external.created(fresh.code, provider)}\n\n${bookingCard(fresh, dict)}`,
     ),
   ];
 }
 
 /** Best-effort provider name from the link's host: playtomic.io → Playtomic. */
 function providerFromUrl(url: string): string {
+  const matched = providerFor(url);
+  if (matched) return matched.label;
   try {
     const host = new URL(url).hostname.replace(/^www\./, '');
     const stem = host.split('.')[0] ?? host;
