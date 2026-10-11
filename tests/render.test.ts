@@ -97,7 +97,7 @@ describe('list shows the venue details', () => {
     const list = bookingList(listUpcoming(GROUP), dict);
     expect(list).toContain('Court 2');
     expect(list).toContain('Jean-Gardner-Batten-Straße 1');
-    expect(list).toContain('Notes: 2 hours booking');
+    expect(list).toContain('💬 2 hours booking');
     expect(list).toContain('Alice');
   });
 

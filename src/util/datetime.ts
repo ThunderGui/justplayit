@@ -144,7 +144,7 @@ export function formatDateTime(isoUtc: string, timezone: string, lang: Lang = 'e
   return DateTime.fromISO(isoUtc, { zone: 'utc' })
     .setZone(timezone)
     .setLocale(LOCALES[lang])
-    .toFormat("ccc dd LLL, HH:mm");
+    .toFormat("ccc dd LLL · HH:mm");
 }
 
 export function formatDayHeading(isoUtc: string, timezone: string, lang: Lang = 'en'): string {

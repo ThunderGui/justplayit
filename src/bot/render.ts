@@ -36,6 +36,20 @@ export function bookingTitle(booking: Booking): string {
   return `${SPORT_TITLE[sport]} — ${placeLabel(booking)}`;
 }
 
+const SPORT_EMOJI: Record<Sport, string> = {
+  padel: '🎾',
+  tennis: '🎾',
+  squash: '🎾',
+  badminton: '🏸',
+  other: '🎾',
+};
+
+/** The group's sport as a single glyph, to head each card and list line. */
+function sportEmoji(booking: Booking): string {
+  const sport = findGroupById(booking.group_id)?.sport;
+  return (sport && SPORT_EMOJI[sport]) || '🎾';
+}
+
 export function calendarLink(booking: Booking): string {
   // For an external booking the platform's own page is the more useful link.
   if (isExternal(booking) && booking.external_url) return booking.external_url;
@@ -55,28 +69,30 @@ export function bookingCard(booking: Booking, dict: Dict, settings = getSettings
   const tz = settings.timezone;
   const lang = settings.language;
   const L = dict.label;
+  const E = sportEmoji(booking);
+  const when = formatDateTime(booking.starts_at, tz, lang);
 
   const lines: string[] = [];
 
   if (isExternal(booking)) {
     const provider = booking.external_provider ?? 'external';
-    lines.push(`*${booking.code}* · ${placeLabel(booking)} · _${provider}_`);
-    lines.push(`${L.when}: ${formatDateTime(booking.starts_at, tz, lang)}`);
-    if (booking.court) lines.push(`${L.court}: ${booking.court}`);
-    if (booking.notes) lines.push(`${L.notes}: ${booking.notes}`);
+    const court = booking.court ? ` · ${L.court} ${booking.court.replace(/^court\s+/i, '')}` : '';
+    lines.push(`${E} *${booking.code}* · ${placeLabel(booking)}${court} · _${provider}_`);
+    lines.push(`🗓️ ${when}`);
 
-    // Live data from the platform, when the bot has synced it.
     const xp = externalPlayers(booking);
     if (xp.length > 0) {
+      const total = booking.external_slots_total ? `/${booking.external_slots_total}` : '';
       const slots =
         booking.external_slots_free != null && booking.external_slots_total != null
-          ? ` (${booking.external_slots_free} ${L.spotsLeft})`
+          ? ` — ${booking.external_slots_free} ${L.spotsLeft}`
           : '';
-      lines.push(`${L.players}: ${xp.length}${booking.external_slots_total ? '/' + booking.external_slots_total : ''}${slots}`);
+      lines.push(`👥 ${xp.length}${total}${slots}`);
       lines.push(...xp.map((n) => `  • ${n}`));
     }
 
-    lines.push(`${L.link}: ${booking.external_url}`);
+    if (booking.notes) lines.push(`💬 ${booking.notes}`);
+    lines.push(`🔗 ${booking.external_url}`);
     lines.push('');
     lines.push(dict.external.managedNote(provider));
     return lines.join('\n');
@@ -86,18 +102,16 @@ export function bookingCard(booking: Booking, dict: Dict, settings = getSettings
   const confirmed = roster.confirmed;
   const free = booking.max_players - confirmed.length;
 
-  lines.push(`*${booking.code}* · ${placeLabel(booking)}`);
-  lines.push(`${L.when}: ${formatDateTime(booking.starts_at, tz, lang)}`);
-  if (booking.court) lines.push(`${L.court}: ${booking.court}`);
+  const court = booking.court ? ` · ${L.court} ${booking.court.replace(/^court\s+/i, '')}` : '';
+  lines.push(`${E} *${booking.code}* · ${placeLabel(booking)}${court}`);
+  lines.push(`🗓️ ${when}  🔗 ${L.addToCalendar}: ${calendarLink(booking)}`);
 
-  // Dividing by the players confirmed so far reads "€40.00 each" on a brand new
-  // booking, where the creator is the only one on the sheet — technically true,
-  // useless in practice, and alarming to read. The figure people actually want
-  // is the expected split: the minimum the group is planning for, or the real
-  // headcount once it grows past that.
+  // Expected split on the planned headcount (min players, or the real count
+  // once it grows past that) — never a scary "€40 each" on a one-person sheet.
   const expectedPlayers = Math.max(confirmed.length, booking.min_players);
   lines.push(
-    `${L.cost}: ${formatMoney(booking.total_cost_cents, booking.currency)} · ` +
+    `💰 ${formatMoney(booking.total_cost_cents, booking.currency)} ` +
+      `(${L.paidBy} ${displayName(findUserById(booking.payer_id))}) · ` +
       dict.payment.perPlayerEstimate(
         formatMoney(Math.round(booking.total_cost_cents / expectedPlayers), booking.currency),
         expectedPlayers,
@@ -105,10 +119,9 @@ export function bookingCard(booking: Booking, dict: Dict, settings = getSettings
   );
 
   lines.push(
-    `${L.players}: ${confirmed.length}/${booking.max_players}` +
+    `👥 ${confirmed.length}/${booking.max_players}` +
       (free > 0 ? ` — ${free} ${L.spotsLeft}` : ` — ${L.full}`),
   );
-
   lines.push(
     confirmed.length > 0
       ? confirmed.map((p) => `  • ${displayName(findUserById(p.user_id))}`).join('\n')
@@ -116,22 +129,14 @@ export function bookingCard(booking: Booking, dict: Dict, settings = getSettings
   );
 
   if (roster.waitlist.length > 0) {
-    lines.push(`${L.waitlist}:`);
+    lines.push(`⏳ ${L.waitlist}:`);
     lines.push(
-      roster.waitlist
-        .map((p, i) => `  ${i + 1}. ${displayName(findUserById(p.user_id))}`)
-        .join('\n'),
+      roster.waitlist.map((p, i) => `  ${i + 1}. ${displayName(findUserById(p.user_id))}`).join('\n'),
     );
   }
 
-  lines.push(`${L.paidBy}: ${displayName(findUserById(booking.payer_id))}`);
-  lines.push(
-    `${L.freeCancelUntil}: ${formatDateTime(cancellationDeadline(booking), tz, lang)}`,
-  );
-  if (booking.notes) lines.push(`${L.notes}: ${booking.notes}`);
-
-  lines.push('');
-  lines.push(`${L.addToCalendar}: ${calendarLink(booking)}`);
+  lines.push(`⏰ ${L.freeCancelUntil} ${formatDateTime(cancellationDeadline(booking), tz, lang)}`);
+  if (booking.notes) lines.push(`💬 ${booking.notes}`);
 
   return lines.join('\n');
 }
@@ -149,26 +154,23 @@ export function bookingList(bookings: Booking[], dict: Dict, settings = getSetti
   for (const booking of bookings) {
     const day = formatDayHeading(booking.starts_at, tz, lang);
     if (day !== currentDay) {
-      out.push('', `_${day}_`);
+      out.push('', `🗓️ *${day}*`);
       currentDay = day;
     }
 
-    const time = DateTime.fromISO(booking.starts_at, { zone: 'utc' })
-      .setZone(tz)
-      .toFormat('HH:mm');
+    const E = sportEmoji(booking);
+    const time = DateTime.fromISO(booking.starts_at, { zone: 'utc' }).setZone(tz).toFormat('HH:mm');
 
     if (isExternal(booking)) {
       const provider = booking.external_provider ?? 'external';
       const xp = externalPlayers(booking);
       const xslots =
-        booking.external_slots_total != null
-          ? ` · ${xp.length}/${booking.external_slots_total}`
-          : '';
-      out.push(`*${booking.code}* ${time} · ${placeLabel(booking)} · _${provider}_${xslots}`);
+        booking.external_slots_total != null ? ` · 👥 ${xp.length}/${booking.external_slots_total}` : '';
+      out.push(`${E} 🕗 ${time} · *${booking.code}* · ${placeLabel(booking)} · _${provider}_${xslots}`);
       out.push(...venueLines(booking, dict));
       if (xp.length > 0) out.push(`   ${xp.join(', ')}`);
-      out.push(`   ${booking.external_url}`);
-      if (booking.notes) out.push(`   ${dict.label.notes}: ${booking.notes}`);
+      out.push(`   🔗 ${booking.external_url}`);
+      if (booking.notes) out.push(`   💬 ${booking.notes}`);
       continue;
     }
 
@@ -178,21 +180,16 @@ export function bookingList(bookings: Booking[], dict: Dict, settings = getSetti
     const status = count >= booking.max_players ? dict.label.full : `${count}/${booking.max_players}`;
 
     out.push(
-      `*${booking.code}* ${time} · ${placeLabel(booking)} · ${status}${waiting}` +
-        ` · ${formatMoney(booking.total_cost_cents, booking.currency)}`,
+      `${E} 🕗 ${time} · *${booking.code}* · ${placeLabel(booking)}` +
+        ` · 👥 ${status}${waiting} · 💰 ${formatMoney(booking.total_cost_cents, booking.currency)}`,
     );
-
     out.push(...venueLines(booking, dict));
-
-    // Who is actually in. Comma-separated rather than bulleted, so a list of
-    // several games stays scannable in a busy group chat.
     out.push(
       count > 0
         ? `   ${roster.confirmed.map((p) => displayName(findUserById(p.user_id))).join(', ')}`
         : `   _${dict.label.nobodyYet}_`,
     );
-
-    if (booking.notes) out.push(`   ${dict.label.notes}: ${booking.notes}`);
+    if (booking.notes) out.push(`   💬 ${booking.notes}`);
   }
 
   return out.join('\n');
@@ -209,12 +206,12 @@ export function bookingList(bookings: Booking[], dict: Dict, settings = getSetti
 function venueLines(booking: Booking, dict: Dict): string[] {
   const parts: string[] = [];
 
-  if (booking.court) parts.push(`${dict.label.court} ${booking.court}`);
+  if (booking.court) parts.push(`${dict.label.court} ${booking.court.replace(/^court\s+/i, '')}`);
 
   const address = placeAddress(booking);
   if (address && address !== placeLabel(booking)) parts.push(address);
 
-  return parts.length > 0 ? [`   ${parts.join(' · ')}`] : [];
+  return parts.length > 0 ? [`   📍 ${parts.join(' · ')}`] : [];
 }
 
 export function balanceCard(
