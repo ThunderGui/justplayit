@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import type { Server } from 'node:http';
 import { config } from './config.js';
 import { closeDb, initDb } from './db/index.js';
-import { getSettings } from './domain/settings.js';
+import { findGroupById } from './domain/groups.js';
 import { findUserById } from './domain/users.js';
 import { startScheduler, type Notifier, type SchedulerHandle } from './scheduler/jobs.js';
 import { logger } from './util/logger.js';
@@ -31,17 +31,21 @@ async function main(): Promise<void> {
     logger.warn('WHATSAPP_ENABLED=0 — running without a WhatsApp connection');
   }
 
-  /** Routes scheduled announcements through whatever channel is available. */
+  /**
+   * Routes scheduled announcements to a specific group's WhatsApp chat. With
+   * several groups on one bot, every group-bound message has to name which
+   * group it belongs to — the group's own JID is looked up here.
+   */
   const notifier: Notifier = {
-    async sendToGroup(text, mentionUserIds) {
-      const groupJid = getSettings().groupJid;
-      if (!client || !groupJid) return;
+    async sendToGroup(groupId, text, mentionUserIds) {
+      const group = findGroupById(groupId);
+      if (!client || !group || !group.wa_jid || group.wa_jid === 'unconfigured') return;
 
       const mentions = (mentionUserIds ?? [])
         .map((id) => findUserById(id)?.wa_id)
         .filter((jid): jid is string => typeof jid === 'string' && !jid.startsWith('deleted:'));
 
-      await client.sendText(groupJid, text, mentions);
+      await client.sendText(group.wa_jid, text, mentions);
     },
 
     async sendToUser(userId, text) {
@@ -56,7 +60,8 @@ async function main(): Promise<void> {
   const server: Server | null = startWebServer({
     isConnected: () => client?.isConnected() ?? false,
     listGroups: async () => (client ? client.listGroups() : []),
-    notifyGroup: (text, mentionUserIds) => notifier.sendToGroup(text, mentionUserIds),
+    notifyGroup: (groupId, text, mentionUserIds) =>
+      notifier.sendToGroup(groupId, text, mentionUserIds),
   });
 
   let shuttingDown = false;

@@ -27,11 +27,16 @@ export interface PendingReminders {
   onCooldown: ReminderTarget[];
 }
 
-function lastReminderAt(creditorId: number, debtorId: number): string | undefined {
+function lastReminderAt(
+  creditorId: number,
+  debtorId: number,
+  groupId: number,
+): string | undefined {
   return one<{ sent_at: string }>(
     `SELECT sent_at FROM payment_reminders
-      WHERE from_user_id = ? AND to_user_id = ?
+      WHERE group_id = ? AND from_user_id = ? AND to_user_id = ?
       ORDER BY sent_at DESC LIMIT 1`,
+    groupId,
     creditorId,
     debtorId,
   )?.sent_at;
@@ -43,13 +48,17 @@ function lastReminderAt(creditorId: number, debtorId: number): string | undefine
  *
  * @param onlyUserId restrict to a single debtor, when the creditor named one.
  */
-export function pendingReminders(creditorId: number, onlyUserId?: number): PendingReminders {
+export function pendingReminders(
+  creditorId: number,
+  groupId: number,
+  onlyUserId?: number,
+): PendingReminders {
   const cutoff = DateTime.utc().minus({ hours: REMINDER_COOLDOWN_HOURS }).toISO()!;
 
   const due: ReminderTarget[] = [];
   const onCooldown: ReminderTarget[] = [];
 
-  for (const entry of balanceFor(creditorId)) {
+  for (const entry of balanceFor(creditorId, groupId)) {
     // balanceFor is from the creditor's perspective: negative means the other
     // person owes them.
     if (entry.cents >= 0) continue;
@@ -59,7 +68,7 @@ export function pendingReminders(creditorId: number, onlyUserId?: number): Pendi
     // An erased user has no number left to message.
     if (!debtor || debtor.anonymised_at) continue;
 
-    const lastRemindedAt = lastReminderAt(creditorId, entry.otherUserId);
+    const lastRemindedAt = lastReminderAt(creditorId, entry.otherUserId, groupId);
     const target: ReminderTarget = {
       userId: entry.otherUserId,
       cents: -entry.cents,
@@ -77,10 +86,16 @@ export function pendingReminders(creditorId: number, onlyUserId?: number): Pendi
   return { due, onCooldown };
 }
 
-export function recordReminder(creditorId: number, debtorId: number, cents: number): void {
+export function recordReminder(
+  creditorId: number,
+  debtorId: number,
+  cents: number,
+  groupId: number,
+): void {
   run(
-    `INSERT INTO payment_reminders (from_user_id, to_user_id, amount_cents, sent_at)
-     VALUES (?, ?, ?, ?)`,
+    `INSERT INTO payment_reminders (group_id, from_user_id, to_user_id, amount_cents, sent_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    groupId,
     creditorId,
     debtorId,
     cents,
@@ -89,7 +104,7 @@ export function recordReminder(creditorId: number, debtorId: number, cents: numb
 }
 
 /** Reminder history, newest first. Used by the admin console. */
-export function listReminders(limit = 100): {
+export function listReminders(groupId: number, limit = 100): {
   from_user_id: number;
   to_user_id: number;
   amount_cents: number;
@@ -97,7 +112,8 @@ export function listReminders(limit = 100): {
 }[] {
   return many(
     `SELECT from_user_id, to_user_id, amount_cents, sent_at
-       FROM payment_reminders ORDER BY sent_at DESC LIMIT ?`,
+       FROM payment_reminders WHERE group_id = ? ORDER BY sent_at DESC LIMIT ?`,
+    groupId,
     limit,
   );
 }

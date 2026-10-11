@@ -3,7 +3,7 @@ import { joinBooking, leaveBooking } from '../src/domain/bookings.js';
 import { balanceFor, settleBooking, simplifyDebts } from '../src/domain/ledger.js';
 import { claimPayment } from '../src/domain/payments.js';
 import { setSettings } from '../src/domain/settings.js';
-import { booking, freshDb, inHours, user } from './helpers.js';
+import { GROUP, booking, freshDb, inHours, user } from './helpers.js';
 
 beforeEach(() => freshDb());
 
@@ -28,8 +28,8 @@ describe('settlement', () => {
     expect(result.lines.every((l) => l.amountCents === 1000)).toBe(true);
 
     // Alice is owed €10 by each of the other three.
-    expect(balanceFor(bob.id)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
-    expect(balanceFor(alice.id)).toEqual(
+    expect(balanceFor(bob.id, GROUP)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
+    expect(balanceFor(alice.id, GROUP)).toEqual(
       expect.arrayContaining([
         { otherUserId: bob.id, cents: -1000 },
         { otherUserId: carol.id, cents: -1000 },
@@ -88,8 +88,8 @@ describe('balance netting', () => {
     joinBooking(theirs.code, me);
     settleBooking(theirs.id); // I owe X €10
 
-    expect(balanceFor(me.id)).toEqual([{ otherUserId: x.id, cents: 200 }]);
-    expect(balanceFor(x.id)).toEqual([{ otherUserId: me.id, cents: -200 }]);
+    expect(balanceFor(me.id, GROUP)).toEqual([{ otherUserId: x.id, cents: 200 }]);
+    expect(balanceFor(x.id, GROUP)).toEqual([{ otherUserId: me.id, cents: -200 }]);
   });
 
   it('drops the pair entirely once the debts cancel out', () => {
@@ -109,8 +109,8 @@ describe('balance netting', () => {
     joinBooking(theirs.code, me);
     settleBooking(theirs.id);
 
-    expect(balanceFor(me.id)).toEqual([]);
-    expect(balanceFor(x.id)).toEqual([]);
+    expect(balanceFor(me.id, GROUP)).toEqual([]);
+    expect(balanceFor(x.id, GROUP)).toEqual([]);
   });
 
   it('reduces the balance when a payment is confirmed', () => {
@@ -123,6 +123,7 @@ describe('balance netting', () => {
     settleBooking(b.id); // Bob owes Alice €10
 
     const result = claimPayment({
+      groupId: GROUP,
       claimant: bob,
       claimantIsAdmin: false,
       fromUserId: bob.id,
@@ -130,7 +131,7 @@ describe('balance netting', () => {
       amountCents: 600,
     });
     expect(result.ok && result.status).toBe('APPROVED');
-    expect(balanceFor(bob.id)).toEqual([{ otherUserId: alice.id, cents: 400 }]);
+    expect(balanceFor(bob.id, GROUP)).toEqual([{ otherUserId: alice.id, cents: 400 }]);
   });
 });
 
@@ -156,7 +157,7 @@ describe('simplifyDebts', () => {
       settleBooking(bk.id);
     }
 
-    expect(simplifyDebts()).toEqual([]);
+    expect(simplifyDebts(GROUP)).toEqual([]);
   });
 
   it('routes a chain of debts into one direct transfer', () => {
@@ -178,7 +179,7 @@ describe('simplifyDebts', () => {
     joinBooking(second.code, b);
     settleBooking(second.id);
 
-    expect(simplifyDebts()).toEqual([{ fromUserId: a.id, toUserId: c.id, cents: 1000 }]);
+    expect(simplifyDebts(GROUP)).toEqual([{ fromUserId: a.id, toUserId: c.id, cents: 1000 }]);
   });
 });
 
@@ -207,7 +208,7 @@ describe('late cancellation liability', () => {
     // Four players on court, Dave released entirely.
     expect(result.lines).toHaveLength(4);
     expect(result.lines.find((l) => l.userId === dave.id)).toBeUndefined();
-    expect(balanceFor(dave.id)).toEqual([]);
+    expect(balanceFor(dave.id, GROUP)).toEqual([]);
   });
 
   it('keeps an unreplaced late canceller liable for a full share', () => {
@@ -233,7 +234,7 @@ describe('late cancellation liability', () => {
       amountCents: 1000,
       lateCancellation: true,
     });
-    expect(balanceFor(dave.id)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
+    expect(balanceFor(dave.id, GROUP)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
   });
 
   it('charges a replaced late canceller anyway when min players is not reached', () => {
@@ -262,7 +263,7 @@ describe('late cancellation liability', () => {
 
     expect(result.lines).toHaveLength(4); // Alice, Bob, Erin + Dave
     expect(result.lines.find((l) => l.userId === dave.id)?.lateCancellation).toBe(true);
-    expect(balanceFor(dave.id)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
+    expect(balanceFor(dave.id, GROUP)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
   });
 
   it('asks for a second confirmation before recording a late leave', () => {
@@ -293,6 +294,6 @@ describe('late cancellation liability', () => {
     const result = settleBooking(b.id);
     if (!result.ok) throw new Error('expected settlement');
     expect(result.lines).toHaveLength(1); // Alice alone
-    expect(balanceFor(bob.id)).toEqual([]);
+    expect(balanceFor(bob.id, GROUP)).toEqual([]);
   });
 });

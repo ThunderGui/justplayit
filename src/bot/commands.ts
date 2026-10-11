@@ -17,6 +17,7 @@ import { balanceFor, overallBalances, settleBooking, simplifyDebts } from '../do
 import { approveClaim, claimPayment, rejectClaim } from '../domain/payments.js';
 import { setPending, takePending } from '../domain/pending.js';
 import { cooldownRemainingHours, pendingReminders, recordReminder } from '../domain/reminders.js';
+import { listMembers } from '../domain/groups.js';
 import { listPlaces, resolvePlace } from '../domain/places.js';
 import type { Settings } from '../domain/settings.js';
 import { getSettings } from '../domain/settings.js';
@@ -57,7 +58,10 @@ export interface OutgoingMessage {
 }
 
 export interface CommandContext {
+  /** The group this message belongs to. Every read and write is scoped to it. */
+  groupId: number;
   user: User;
+  /** True for a WhatsApp group admin, or the web-console superadmin. */
   isAdmin: boolean;
   /** The chat the message arrived in. */
   chatId: string;
@@ -88,8 +92,18 @@ const toDm = (userId: number, text: string): OutgoingMessage => ({
 
 export function handleCommand(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] {
   switch (cmd.name) {
-    case 'help':
-      return [reply(helpText(ctx.dict, ctx.settings, ctx.isAdmin))];
+    case 'help': {
+      const text = helpText(ctx.dict, ctx.settings, ctx.isAdmin);
+      // Admins get the fuller, admin-only help privately — it lists privileged
+      // commands the rest of the group has no use seeing, and keeps the group
+      // chat uncluttered. Non-admins get it where they asked.
+      if (ctx.isAdmin) {
+        return ctx.isGroup
+          ? [toDm(ctx.user.id, text), reply(ctx.dict.common.sentPrivately)]
+          : [toDm(ctx.user.id, text)];
+      }
+      return [reply(text)];
+    }
     case 'list':
       return handleList(ctx);
     case 'show':
@@ -136,7 +150,7 @@ export function handleCommand(cmd: ParsedCommand, ctx: CommandContext): Outgoing
 /* ------------------------------------------------------------------ */
 
 function handleList(ctx: CommandContext): OutgoingMessage[] {
-  return [reply(bookingList(listUpcoming(), ctx.dict))];
+  return [reply(bookingList(listUpcoming(ctx.groupId), ctx.dict, ctx.settings))];
 }
 
 function handleShow(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] {
@@ -207,6 +221,7 @@ function handleBook(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] 
   const cancelHours = toPositiveInt(field(f, 'cancel'));
 
   const result = createBooking({
+    groupId: ctx.groupId,
     creator: ctx.user,
     startsAtIso: toUtcIso(startsAt),
     durationMin: durationMin ?? undefined,
@@ -278,6 +293,7 @@ function handleExternal(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessag
   const durationMin = field(f, 'duration') ? parseDuration(field(f, 'duration')!) : undefined;
 
   const result = createExternalBooking({
+    groupId: ctx.groupId,
     creator: ctx.user,
     provider,
     url: urlInput,
@@ -347,24 +363,24 @@ function handleCancel(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[
 /* ------------------------------------------------------------------ */
 
 /** With one booking coming up, `!join` alone is unambiguous — don't demand an id. */
-function resolveTargetBooking(cmd: ParsedCommand): Booking | 'none' | 'ambiguous' {
+function resolveTargetBooking(cmd: ParsedCommand, groupId: number): Booking | 'none' | 'ambiguous' {
   const code = cmd.args[0];
   if (code) return findBookingByCode(code) ?? 'none';
 
-  const upcoming = listUpcoming().filter((b) => !isExternal(b));
+  const upcoming = listUpcoming(groupId).filter((b) => !isExternal(b));
   if (upcoming.length === 1) return upcoming[0]!;
   return upcoming.length === 0 ? 'none' : 'ambiguous';
 }
 
 function handleJoin(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] {
   const { dict } = ctx;
-  const target = resolveTargetBooking(cmd);
+  const target = resolveTargetBooking(cmd, ctx.groupId);
 
   if (target === 'none') {
     return [reply(cmd.args[0] ? dict.booking.notFound(cmd.args[0].toUpperCase()) : dict.booking.listEmpty(ctx.settings.commandPrefix))];
   }
   if (target === 'ambiguous') {
-    return [reply(`${dict.common.usage(`${ctx.settings.commandPrefix}join <id>`)}\n\n${bookingList(listUpcoming(), dict)}`)];
+    return [reply(`${dict.common.usage(`${ctx.settings.commandPrefix}join <id>`)}\n\n${bookingList(listUpcoming(ctx.groupId), dict, ctx.settings)}`)];
   }
 
   const result = joinBooking(target.code, ctx.user);
@@ -414,7 +430,7 @@ function handleJoin(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] 
 
 function handleLeave(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] {
   const { dict } = ctx;
-  const target = resolveTargetBooking(cmd);
+  const target = resolveTargetBooking(cmd, ctx.groupId);
 
   if (target === 'none') {
     return [reply(cmd.args[0] ? dict.booking.notFound(cmd.args[0].toUpperCase()) : dict.booking.listEmpty(ctx.settings.commandPrefix))];
@@ -557,7 +573,7 @@ function handleConfirm(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage
   if (targetUserId == null) {
     const nameGuess = textArgs.filter((a) => parseMoneyToCents(a) == null).join(' ');
     if (nameGuess) {
-      const matched = matchUsersByName(nameGuess, ctx.user.id);
+      const matched = matchUsersByName(nameGuess, ctx.user.id, ctx.groupId);
       if (matched.length === 1) targetUserId = matched[0]!.id;
       else if (matched.length > 1) {
         return [reply(dict.common.ambiguousUser(matched.map((u) => displayName(u))))];
@@ -566,7 +582,7 @@ function handleConfirm(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage
   }
 
   // With nobody named and exactly one open debt, the intent is unambiguous.
-  const myBalance = balanceFor(ctx.user.id).filter((b) => b.cents > 0);
+  const myBalance = balanceFor(ctx.user.id, ctx.groupId).filter((b) => b.cents > 0);
   if (targetUserId == null) {
     if (myBalance.length === 1) targetUserId = myBalance[0]!.otherUserId;
     else if (myBalance.length === 0) return [privateReply(ctx, dict.payment.balanceAllClear)];
@@ -575,7 +591,7 @@ function handleConfirm(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage
         privateReply(
           ctx,
           `${dict.common.usage(`${ctx.settings.commandPrefix}confirm <name> [amount]`)}\n\n` +
-            balanceCard(balanceFor(ctx.user.id), dict, ctx.settings.currency),
+            balanceCard(balanceFor(ctx.user.id, ctx.groupId), dict, ctx.settings.currency),
         ),
       ];
     }
@@ -590,10 +606,11 @@ function handleConfirm(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage
   // this the person receiving money could never record a payment, which is what
   // the receiver-only and dual policies rely on.
   const netWithTarget =
-    balanceFor(ctx.user.id).find((b) => b.otherUserId === targetUserId)?.cents ?? 0;
+    balanceFor(ctx.user.id, ctx.groupId).find((b) => b.otherUserId === targetUserId)?.cents ?? 0;
   const iAmThePayer = netWithTarget > 0;
 
   const result = claimPayment({
+    groupId: ctx.groupId,
     claimant: ctx.user,
     claimantIsAdmin: ctx.isAdmin,
     fromUserId: iAmThePayer ? ctx.user.id : targetUserId,
@@ -721,12 +738,12 @@ function handleBalance(ctx: CommandContext): OutgoingMessage[] {
   const { dict, settings } = ctx;
 
   // The design is explicit: balances are always answered privately.
-  const personal = balanceCard(balanceFor(ctx.user.id), dict, settings.currency);
+  const personal = balanceCard(balanceFor(ctx.user.id, ctx.groupId), dict, settings.currency);
 
   const messages: OutgoingMessage[] = [toDm(ctx.user.id, personal)];
 
   if (ctx.isAdmin) {
-    const overall = overallBalances();
+    const overall = overallBalances(ctx.groupId);
     if (overall.length > 0) {
       const lines = [`*${dict.payment.overallHeader}*`, ''];
       for (const row of overall) {
@@ -738,7 +755,7 @@ function handleBalance(ctx: CommandContext): OutgoingMessage[] {
         );
       }
 
-      const transfers = simplifyDebts();
+      const transfers = simplifyDebts(ctx.groupId);
       if (transfers.length > 0) {
         lines.push('', `*${dict.payment.suggestedTransfers}*`);
         for (const transfer of transfers) {
@@ -779,7 +796,7 @@ function handleRemind(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[
   let onlyUserId = ctx.mentionedUserIds[0];
   const nameGuess = cmd.args.filter((a) => !a.startsWith('@')).join(' ').trim();
   if (onlyUserId == null && nameGuess) {
-    const matched = matchUsersByName(nameGuess, ctx.user.id);
+    const matched = matchUsersByName(nameGuess, ctx.user.id, ctx.groupId);
     if (matched.length === 1) onlyUserId = matched[0]!.id;
     else if (matched.length > 1) {
       return [privateReply(ctx, dict.common.ambiguousUser(matched.map((u) => displayName(u))))];
@@ -788,7 +805,7 @@ function handleRemind(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[
     }
   }
 
-  const { due, onCooldown } = pendingReminders(ctx.user.id, onlyUserId);
+  const { due, onCooldown } = pendingReminders(ctx.user.id, ctx.groupId, onlyUserId);
 
   if (due.length === 0) {
     const text =
@@ -818,7 +835,7 @@ function handleRemind(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[
         )}${me.payment_handle ? `\n${dict.settlement.payHandle(me.payment_handle)}` : ''}`,
       ),
     );
-    recordReminder(ctx.user.id, target.userId, target.cents);
+    recordReminder(ctx.user.id, target.userId, target.cents, ctx.groupId);
     total += target.cents;
   }
 
@@ -922,7 +939,8 @@ function handleReport(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[
 
   const kind = /\b(bug|error|broken|fehler|erro)\b/i.test(body) ? 'BUG' : 'IDEA';
   const { lastInsertRowid } = run(
-    'INSERT INTO reports (user_id, kind, body, status, created_at) VALUES (?, ?, ?, ?, ?)',
+    'INSERT INTO reports (group_id, user_id, kind, body, status, created_at) VALUES (?, ?, ?, ?, ?, ?)',
+    ctx.groupId,
     ctx.user.id,
     kind,
     body,
@@ -934,7 +952,7 @@ function handleReport(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[
 }
 
 function handleForgetMe(ctx: CommandContext): OutgoingMessage[] {
-  const open = balanceFor(ctx.user.id);
+  const open = balanceFor(ctx.user.id, ctx.groupId);
   const owing = open.filter((b) => b.cents > 0).reduce((sum, b) => sum + b.cents, 0);
 
   // Erasure must not be a way to walk away from a debt someone else is owed.
@@ -969,7 +987,7 @@ function toPositiveInt(value: string | undefined): number | undefined {
  * digits is left alone: `!confirm Daniel 10` means ten euros, not a phone
  * fragment, and a name like "Daniel 2" must not be mistaken for one either.
  */
-function matchUsersByName(query: string, excludeUserId: number): User[] {
+function matchUsersByName(query: string, excludeUserId: number, groupId: number): User[] {
   const raw = query.trim().toLowerCase();
   if (!raw) return [];
 
@@ -977,10 +995,14 @@ function matchUsersByName(query: string, excludeUserId: number): User[] {
   const digits = tail?.[1] ?? null;
   const namePart = (tail ? raw.replace(tail[0], ' ') : raw).replace(/[()…#]/g, '').trim();
 
+  // Restricted to this group's members: naming someone from another group would
+  // leak who else uses the bot, and could never resolve to a real debt anyway.
+  const memberIds = new Set(listMembers(groupId).map((m) => m.user_id));
   const candidates = listUsers().filter(
     (u) =>
       u.id !== excludeUserId &&
       !u.anonymised_at &&
+      memberIds.has(u.id) &&
       (namePart === '' || (u.display_name ?? '').toLowerCase().includes(namePart)),
   );
 
@@ -999,8 +1021,8 @@ function resolveBookingPlace(
   ctx: CommandContext,
 ): { placeId: number | null; customPlace: string | null } | { error: string } {
   const { dict, settings } = ctx;
-  const known = listPlaces();
-  const resolved = resolvePlace(input);
+  const known = listPlaces(ctx.groupId);
+  const resolved = resolvePlace(input, ctx.groupId);
 
   if (resolved.place) return { placeId: resolved.place.id, customPlace: null };
   if (resolved.ambiguous) {
@@ -1035,7 +1057,7 @@ function bookingErrorText(
     case 'invalid_players':
       return dict.booking.invalidPlayers;
     case 'custom_place_not_allowed':
-      return dict.booking.customPlaceNotAllowed(listPlaces().map((p) => p.name).join(', ') || '—');
+      return dict.booking.customPlaceNotAllowed(listPlaces(ctx.groupId).map((p) => p.name).join(', ') || '—');
     case 'no_place':
       return dict.booking.noPlace;
     case 'cancel_limit_locked':

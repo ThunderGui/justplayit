@@ -23,6 +23,8 @@ export interface IncomingMessage {
   text: string;
   isGroup: boolean;
   mentionedJids: string[];
+  /** The group's display name, when the message came from a group. */
+  groupSubject?: string | null;
   /** Present when the message carried an image or document. */
   hasMedia: boolean;
   raw: proto.IWebMessageInfo;
@@ -36,6 +38,8 @@ export interface WhatsAppClient {
   /** Resolves a phone number to the JID WhatsApp actually uses for it. */
   isConnected(): boolean;
   listGroups(): Promise<{ id: string; subject: string }[]>;
+  /** WhatsApp's own admin list for a group, as JIDs. */
+  groupAdmins(groupJid: string): Promise<string[]>;
   logout(): Promise<void>;
 }
 
@@ -184,6 +188,19 @@ export async function startWhatsApp(onMessage: MessageHandler): Promise<WhatsApp
       } catch (err) {
         logger.error({ err }, 'media download failed');
         return null;
+      }
+    },
+
+    async groupAdmins(groupJid) {
+      if (!socket) return [];
+      try {
+        const meta = await socket.groupMetadata(groupJid);
+        return (meta.participants ?? [])
+          .filter((p) => p.admin === 'admin' || p.admin === 'superadmin')
+          .map((p) => p.id);
+      } catch (err) {
+        logger.error({ err }, 'could not read group admins');
+        return [];
       }
     },
 

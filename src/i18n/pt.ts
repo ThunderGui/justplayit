@@ -52,6 +52,9 @@ export const pt: Dict = {
     cancelled: 'Cancelado — nada foi alterado.',
     nothingPending: 'Não tens nada à espera de confirmação.',
     sentPrivately: 'Enviei-te os detalhes em privado.',
+    whichGroup: (names: string) =>
+      `Estás em mais do que um grupo que eu gerí­o, por isso não sei qual queres:\n  • ${names}\n` +
+      'Acrescenta o nome do grupo ao comando, ou envia-o no próprio grupo.',
     cannotDmYou:
       'Não consegui enviar-te mensagem privada. Envia-me uma mensagem direta uma vez para eu poder responder aí.',
   },

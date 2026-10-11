@@ -18,10 +18,12 @@ import {
 import { settleBooking } from '../domain/ledger.js';
 import { approveClaim, findClaimByCode, rejectClaim } from '../domain/payments.js';
 import { createPlace, deletePlace } from '../domain/places.js';
-import { getSettings, setSettings, type Lang, type PaymentConfirmationMode, type Settings } from '../domain/settings.js';
+import { findGroupById, listGroups as listAllGroups, updateGroup, SPORTS, type Sport } from '../domain/groups.js';
+import { getSettings, setSettings, invalidateSettings, type Lang, type PaymentConfirmationMode, type Settings } from '../domain/settings.js';
 import { anonymiseUser, findUserById, listAdmins, setAdmin, setPaymentHandle } from '../domain/users.js';
 import { t } from '../i18n/index.js';
 import { buildIcs } from '../util/calendar.js';
+import { bookingTitle } from '../bot/render.js';
 import { formatDateTime } from '../util/datetime.js';
 import { parseMoneyToCents } from '../util/money.js';
 import { logger } from '../util/logger.js';
@@ -36,6 +38,7 @@ import {
   peoplePage,
   placesPage,
   reportsPage,
+  groupsPage,
   settingsPage,
 } from './pages.js';
 
@@ -47,7 +50,7 @@ export interface WebDeps {
   isConnected(): boolean;
   listGroups(): Promise<{ id: string; subject: string }[]>;
   /** Announces admin changes that affect players, e.g. a moved booking. */
-  notifyGroup(text: string, mentionUserIds?: number[]): Promise<void>;
+  notifyGroup(groupId: number, text: string, mentionUserIds?: number[]): Promise<void>;
 }
 
 /**
@@ -93,6 +96,30 @@ export function createWebApp(deps: WebDeps) {
   app.use(express.urlencoded({ extended: false, limit: '256kb' }));
   app.use(cookieParser());
 
+  /**
+   * Which group the console is acting on. A query parameter rather than session
+   * state, so a link to a page is a link to that group's page.
+   */
+  const groupIdFrom = (req: Request): number => {
+    const raw = Number.parseInt(String(req.query.g ?? ''), 10);
+    if (Number.isFinite(raw) && findGroupById(raw)) return raw;
+    return listAllGroups()[0]?.id ?? 1;
+  };
+
+  /** Renders a page, injecting the group switcher so every page carries it. */
+  const sendFor = (res: Response, req: Request, body: string, options: Parameters<typeof layout>[1]) =>
+    res.type('html').send(
+      layout(body, {
+        ...options,
+        currentGroupId: groupIdFrom(req),
+        groups: listAllGroups(true).map((gr) => ({
+          id: gr.id,
+          label: gr.name ?? `Group ${gr.id}`,
+        })),
+      }),
+    );
+
+  // Pages without a group context (login) still use the bare renderer.
   const send = (res: Response, body: string, options: Parameters<typeof layout>[1]) =>
     res.type('html').send(layout(body, options));
 
@@ -111,7 +138,7 @@ export function createWebApp(deps: WebDeps) {
 
     const ics = buildIcs({
       uid: `justplayit-${booking.code}@justplayit`,
-      title: `Padel — ${placeLabel(booking)}`,
+      title: bookingTitle(booking),
       startIsoUtc: booking.starts_at,
       durationMin: booking.duration_min,
       location: placeAddress(booking),
@@ -176,7 +203,7 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.get('/', async (req, res) => {
-    send(res, dashboardPage(deps.isConnected()), {
+    sendFor(res, req, dashboardPage(deps.isConnected(), groupIdFrom(req)), {
       title: 'Dashboard',
       active: '/',
       flash: flashFrom(req),
@@ -184,7 +211,7 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.get('/bookings', (req, res) => {
-    send(res, bookingsPage(), { title: 'Bookings', active: '/bookings', flash: flashFrom(req) });
+    sendFor(res, req, bookingsPage(groupIdFrom(req)), { title: 'Bookings', active: '/bookings', flash: flashFrom(req) });
   });
 
   app.post('/bookings/:id/cancel', (req, res) => {
@@ -209,7 +236,7 @@ export function createWebApp(deps: WebDeps) {
       );
     }
 
-    send(res, bookingEditPage(booking), {
+    sendFor(res, req, bookingEditPage(booking), {
       title: `Edit ${booking.code}`,
       active: '/bookings',
       flash: flashFrom(req),
@@ -288,6 +315,7 @@ export function createWebApp(deps: WebDeps) {
       const dict = t(settings.language);
       await deps
         .notifyGroup(
+          result.booking.group_id,
           dict.booking.rescheduled(
             result.booking.code,
             formatDateTime(result.previousStartsAt, settings.timezone, settings.language),
@@ -317,14 +345,14 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.get('/places', (req, res) => {
-    send(res, placesPage(), { title: 'Places', active: '/places', flash: flashFrom(req) });
+    sendFor(res, req, placesPage(groupIdFrom(req)), { title: 'Places', active: '/places', flash: flashFrom(req) });
   });
 
   app.post('/places', (req, res) => {
     const name = String(req.body?.name ?? '').trim();
     if (!name) return res.redirect('/places?err=A+name+is+required');
     try {
-      createPlace({ name, address: String(req.body?.address ?? '') });
+      createPlace({ groupId: groupIdFrom(req), name, address: String(req.body?.address ?? '') });
       res.redirect(`/places?ok=${encodeURIComponent(`${name} added.`)}`);
     } catch {
       res.redirect('/places?err=' + encodeURIComponent('A place with that name already exists.'));
@@ -343,7 +371,7 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.get('/people', (req, res) => {
-    send(res, peoplePage(), { title: 'People', active: '/people', flash: flashFrom(req) });
+    sendFor(res, req, peoplePage(groupIdFrom(req)), { title: 'People', active: '/people', flash: flashFrom(req) });
   });
 
   app.post('/people/:id/admin', (req, res) => {
@@ -362,20 +390,22 @@ export function createWebApp(deps: WebDeps) {
   app.post('/people/:id/handle', (req, res) => {
     const handle = String(req.body?.handle ?? '').trim();
     setPaymentHandle(Number(req.params.id), handle || null);
-    res.redirect('/people?ok=' + encodeURIComponent('Payment details saved.'));
+    res.redirect(`/people?g=${groupIdFrom(req)}&ok=` + encodeURIComponent('Payment details saved.'));
   });
 
   app.post('/people/:id/forget', (req, res) => {
     const userId = Number(req.params.id);
     if (findUserById(userId)?.is_admin && listAdmins().length <= 1) {
-      return res.redirect('/people?err=' + encodeURIComponent('Cannot erase the only admin.'));
+      return res.redirect(
+        `/people?g=${groupIdFrom(req)}&err=` + encodeURIComponent('Cannot erase the only admin.'),
+      );
     }
     anonymiseUser(userId);
-    res.redirect('/people?ok=' + encodeURIComponent('Personal data erased.'));
+    res.redirect(`/people?g=${groupIdFrom(req)}&ok=` + encodeURIComponent('Personal data erased.'));
   });
 
   app.get('/money', (req, res) => {
-    send(res, moneyPage(), { title: 'Money', active: '/money', flash: flashFrom(req) });
+    sendFor(res, req, moneyPage(groupIdFrom(req)), { title: 'Money', active: '/money', flash: flashFrom(req) });
   });
 
   app.post('/claims/:id/:action', (req, res) => {
@@ -398,7 +428,7 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.get('/backups', (req, res) => {
-    send(res, backupsPage(listBackups()), {
+    sendFor(res, req, backupsPage(listBackups()), {
       title: 'Backups',
       active: '/settings',
       flash: flashFrom(req),
@@ -423,6 +453,34 @@ export function createWebApp(deps: WebDeps) {
     });
   });
 
+  app.get('/groups', (req, res) => {
+    sendFor(res, req, groupsPage(groupIdFrom(req)), {
+      title: 'Groups',
+      active: '/groups',
+      flash: flashFrom(req),
+    });
+  });
+
+  app.post('/groups/:id', (req, res) => {
+    const group = findGroupById(Number(req.params.id));
+    if (!group) return res.redirect('/groups?err=' + encodeURIComponent('No such group.'));
+
+    const body = req.body ?? {};
+    const sport = SPORTS.includes(String(body.sport) as Sport)
+      ? (String(body.sport) as Sport)
+      : group.sport;
+
+    updateGroup(group.id, {
+      name: String(body.name ?? '').trim() || null,
+      sport,
+      // An unchecked checkbox is simply absent from the body.
+      active: body.active === '1',
+    });
+    // A sport change shifts the default roster, so drop the cached settings.
+    invalidateSettings(group.id);
+    res.redirect(`/groups?g=${group.id}&ok=${encodeURIComponent('Group updated.')}`);
+  });
+
   app.get('/reports', (req, res) => {
     const reports = many<{
       id: number;
@@ -433,7 +491,7 @@ export function createWebApp(deps: WebDeps) {
       created_at: string;
     }>('SELECT * FROM reports ORDER BY created_at DESC LIMIT 200');
 
-    send(res, reportsPage(reports), {
+    sendFor(res, req, reportsPage(reports), {
       title: 'Reports',
       active: '/reports',
       flash: flashFrom(req),
@@ -453,7 +511,7 @@ export function createWebApp(deps: WebDeps) {
       logger.error({ err }, 'could not list WhatsApp groups');
     }
 
-    send(res, settingsPage(groups), {
+    sendFor(res, req, settingsPage(groups, groupIdFrom(req)), {
       title: 'Settings',
       active: '/settings',
       flash: flashFrom(req),
@@ -468,7 +526,7 @@ export function createWebApp(deps: WebDeps) {
       return Number.isFinite(value) && value >= min && value <= max ? value : fallback;
     };
 
-    const current = getSettings();
+    const current = getSettings(groupIdFrom(req));
     const languages: Lang[] = ['en', 'de', 'pt'];
     const modes: PaymentConfirmationMode[] = ['receiver', 'both', 'dual', 'anyone'];
 
@@ -509,7 +567,7 @@ export function createWebApp(deps: WebDeps) {
       );
     }
 
-    setSettings(patch);
+    setSettings(patch, groupIdFrom(req));
     logger.info('settings updated from web console');
     res.redirect('/settings?ok=' + encodeURIComponent('Settings saved.'));
   });

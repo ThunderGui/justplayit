@@ -11,7 +11,7 @@ import {
 } from '../src/domain/bookings.js';
 import { settleBooking } from '../src/domain/ledger.js';
 import { createPlace } from '../src/domain/places.js';
-import { booking, freshDb, inHours, user } from './helpers.js';
+import { GROUP, booking, freshDb, inHours, user } from './helpers.js';
 
 beforeEach(() => freshDb());
 
@@ -134,6 +134,7 @@ describe('editing a booking schedule', () => {
 
   it('can reschedule a Playtomic booking too', () => {
     const created = createExternalBooking({
+      groupId: GROUP,
       creator: user('Alice'),
       provider: 'Playtomic',
       url: 'https://playtomic.io/m/1',
@@ -147,7 +148,7 @@ describe('editing a booking schedule', () => {
 
   it('can move the booking to a different club', () => {
     const b = booking(user('Alice'));
-    const other = createPlace({ name: 'Другой Club' });
+    const other = createPlace({ groupId: GROUP, name: 'Другой Club' });
 
     const result = editBooking(b.id, { placeId: other.id });
     expect(result.ok).toBe(true);

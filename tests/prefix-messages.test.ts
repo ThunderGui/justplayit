@@ -5,7 +5,7 @@ import { joinBooking } from '../src/domain/bookings.js';
 import { getSettings, setSettings } from '../src/domain/settings.js';
 import { SUPPORTED_LANGUAGES, t } from '../src/i18n/index.js';
 import type { User } from '../src/domain/users.js';
-import { booking, freshDb, inHours, user } from './helpers.js';
+import { GROUP, booking, freshDb, inHours, user } from './helpers.js';
 
 /**
  * Any message that tells someone what to type must use the configured prefix.
@@ -40,6 +40,7 @@ describe('the live prompts use the configured prefix', () => {
     const parsed = parseMessage(text, { prefix: settings.commandPrefix, prefixOptional: true });
     if (parsed.kind !== 'command') throw new Error(`not a command: ${text}`);
     return handleCommand(parsed.command, {
+      groupId: GROUP,
       user: as,
       isAdmin: as.is_admin === 1,
       chatId: 'group',

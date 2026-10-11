@@ -1,5 +1,6 @@
 import { DateTime } from 'luxon';
 import type { BackupFile } from '../domain/backup.js';
+import { listGroups, listMembers, SPORTS, type Group } from '../domain/groups.js';
 import {
   getRoster,
   listAllBookings,
@@ -52,16 +53,16 @@ export function loginPage(error?: string): string {
 /* Dashboard                                                           */
 /* ------------------------------------------------------------------ */
 
-export function dashboardPage(connected: boolean): string {
-  const settings = getSettings();
-  const upcoming = listUpcoming(10);
-  const claims = listPendingClaims();
+export function dashboardPage(connected: boolean, groupId: number): string {
+  const settings = getSettings(groupId);
+  const upcoming = listUpcoming(groupId, 10);
+  const claims = listPendingClaims(groupId);
   const admins = listUsers().filter((u) => u.is_admin === 1);
 
   const setupIssues: string[] = [];
   if (!settings.groupJid) setupIssues.push('No WhatsApp group linked yet.');
   if (admins.length === 0) setupIssues.push('No admin user recognised yet.');
-  if (listPlaces().length === 0) setupIssues.push('No places added yet.');
+  if (listPlaces(groupId).length === 0) setupIssues.push('No places added yet.');
 
   return `
   <h1>Dashboard</h1>
@@ -172,11 +173,11 @@ function bookingTable(bookings: Booking[]): string {
   </table></div>`;
 }
 
-export function bookingsPage(): string {
+export function bookingsPage(groupId: number): string {
   return `
   <h1>Bookings</h1>
   <p class="sub">Everything the bot knows about, newest first.</p>
-  <div class="card">${bookingTable(listAllBookings())}</div>`;
+  <div class="card">${bookingTable(listAllBookings(groupId))}</div>`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -194,7 +195,7 @@ export function bookingEditPage(booking: Booking): string {
   const { date, time } = localDateTimeFields(booking.starts_at, settings.timezone);
   const external = booking.kind === 'EXTERNAL';
   const roster = external ? null : getRoster(booking.id);
-  const places = listPlaces();
+  const places = listPlaces(booking.group_id);
 
   const placeOptions = places
     .map(
@@ -321,8 +322,8 @@ export function bookingEditPage(booking: Booking): string {
 /* Places                                                             */
 /* ------------------------------------------------------------------ */
 
-export function placesPage(): string {
-  const places = listPlaces(true);
+export function placesPage(groupId: number): string {
+  const places = listPlaces(groupId, true);
 
   return `
   <h1>Places</h1>
@@ -372,37 +373,42 @@ export function placesPage(): string {
 /* People                                                              */
 /* ------------------------------------------------------------------ */
 
-export function peoplePage(): string {
-  const users = listUsers().filter((u) => !u.anonymised_at);
+export function peoplePage(groupId: number): string {
+  // This group's members only — People is scoped like every other page. Admin
+  // status mirrors the WhatsApp group, so it is shown rather than toggled here.
+  const members = listMembers(groupId)
+    .map((m) => ({ member: m, user: findUserById(m.user_id) }))
+    .filter((r): r is { member: typeof r.member; user: User } => r.user != null && !r.user.anonymised_at)
+    .sort((a, b) => displayName(a.user).localeCompare(displayName(b.user)));
 
   return `
   <h1>People</h1>
-  <p class="sub">Everyone the bot has seen. Admins can manage bookings and settle games.</p>
+  <p class="sub">
+    Members of this group. Admins are mirrored from the WhatsApp group itself,
+    so promote or demote someone there, not here. Payment details and erasure
+    apply to the person across every group.
+  </p>
 
   <div class="card">
     ${
-      users.length === 0
-        ? '<div class="empty">Nobody yet. People appear here once they message the group.</div>'
+      members.length === 0
+        ? '<div class="empty">Nobody yet. People appear here once they message this group.</div>'
         : `<div class="table-wrap"><table>
             <tr><th>Name</th><th>Payment details</th><th>Admin</th><th></th></tr>
-            ${users
+            ${members
               .map(
-                (u: User) => `<tr>
+                ({ member, user: u }) => `<tr>
               <td>${esc(displayName(u))}</td>
               <td>
-                <form method="post" action="/people/${u.id}/handle" class="inline" style="display:flex;gap:6px">
+                <form method="post" action="/people/${u.id}/handle?g=${groupId}" class="inline" style="display:flex;gap:6px">
                   <input type="text" name="handle" value="${esc(u.payment_handle ?? '')}"
                          placeholder="paypal.me/… or IBAN" style="min-width:200px">
                   <button class="secondary" type="submit">Save</button>
                 </form>
               </td>
-              <td>${u.is_admin ? '<span class="pill ok">Admin</span>' : '<span class="muted">—</span>'}</td>
+              <td>${member.is_admin ? '<span class="pill ok">Admin</span>' : '<span class="muted">—</span>'}</td>
               <td>
-                <form method="post" action="/people/${u.id}/admin" class="inline">
-                  <input type="hidden" name="value" value="${u.is_admin ? '0' : '1'}">
-                  <button class="secondary" type="submit">${u.is_admin ? 'Revoke admin' : 'Make admin'}</button>
-                </form>
-                <form method="post" action="/people/${u.id}/forget" class="inline"
+                <form method="post" action="/people/${u.id}/forget?g=${groupId}" class="inline"
                       onsubmit="return confirm('Erase personal data for ${esc(displayName(u))}? This cannot be undone.')">
                   <button class="danger" type="submit">Erase</button>
                 </form>
@@ -419,10 +425,10 @@ export function peoplePage(): string {
 /* Money                                                               */
 /* ------------------------------------------------------------------ */
 
-export function moneyPage(): string {
-  const balances = overallBalances();
-  const transfers = simplifyDebts();
-  const ledger = listLedger(60);
+export function moneyPage(groupId: number): string {
+  const balances = overallBalances(groupId);
+  const transfers = simplifyDebts(groupId);
+  const ledger = listLedger(groupId, 60);
 
   return `
   <h1>Money</h1>
@@ -588,6 +594,64 @@ export function backupsPage(files: BackupFile[]): string {
 }
 
 /* ------------------------------------------------------------------ */
+/* Groups                                                              */
+/* ------------------------------------------------------------------ */
+
+export function groupsPage(currentGroupId: number): string {
+  const groups = listGroups(true);
+
+  const row = (g: Group): string => {
+    const members = listMembers(g.id).length;
+    const sportOptions = SPORTS.map(
+      (sp) => `<option value="${sp}"${sp === g.sport ? ' selected' : ''}>${esc(sp)}</option>`,
+    ).join('');
+    return `<tr>
+      <td>${g.id === currentGroupId ? '➤ ' : ''}<a href="/?g=${g.id}">${esc(g.name ?? `Group ${g.id}`)}</a></td>
+      <td class="mono" style="font-size:12px">${esc(g.wa_jid)}</td>
+      <td>${members}</td>
+      <td><span class="pill ${g.active ? 'ok' : ''}">${g.active ? 'Active' : 'Hidden'}</span></td>
+      <td>
+        <form method="post" action="/groups/${g.id}" class="inline" style="display:flex;gap:6px;align-items:center">
+          <input type="text" name="name" value="${esc(g.name ?? '')}" placeholder="Name" style="width:150px">
+          <select name="sport">${sportOptions}</select>
+          <label style="font-weight:400;margin:0"><input type="checkbox" name="active" value="1"${g.active ? ' checked' : ''}>active</label>
+          <button class="secondary" type="submit">Save</button>
+        </form>
+      </td>
+    </tr>`;
+  };
+
+  return `
+  <h1>Groups</h1>
+  <p class="sub">
+    Each group is its own world — its own bookings, places, members and balances.
+    Nothing is shared between them. Pick one with the switcher up top to manage it.
+  </p>
+
+  <div class="card">
+    ${
+      groups.length === 0
+        ? '<div class="empty">No groups yet. One is created automatically when the bot is added to a WhatsApp group.</div>'
+        : `<div class="table-wrap"><table>
+            <tr><th>Name</th><th>WhatsApp group</th><th>Members</th><th>Status</th><th>Edit</th></tr>
+            ${groups.map(row).join('')}
+          </table></div>`
+    }
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top:0">About groups</h2>
+    <p class="muted" style="margin:0">
+      Groups register themselves: add the bot to a WhatsApp group and send one
+      command, and it appears here. You cannot create an empty group from the
+      console because a group only means anything once it is tied to a real
+      WhatsApp chat. Rename, set the sport, or hide a finished group above.
+      Hiding a group stops the bot responding there without deleting its history.
+    </p>
+  </div>`;
+}
+
+/* ------------------------------------------------------------------ */
 /* Settings                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -606,8 +670,8 @@ function checkbox(name: string, checked: boolean, label: string, hint?: string):
   </label>`;
 }
 
-export function settingsPage(groups: { id: string; subject: string }[]): string {
-  const s: Settings = getSettings();
+export function settingsPage(groups: { id: string; subject: string }[], groupId: number): string {
+  const s: Settings = getSettings(groupId);
 
   const groupOptions = groups
     .map(

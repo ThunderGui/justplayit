@@ -7,21 +7,22 @@ import { createPlace } from '../src/domain/places.js';
 import { getSettings, setSettings } from '../src/domain/settings.js';
 import { t } from '../src/i18n/index.js';
 import type { User } from '../src/domain/users.js';
-import { booking, freshDb, inHours, user } from './helpers.js';
+import { GROUP, booking, freshDb, inHours, user } from './helpers.js';
 
-const GROUP = 'group-123@g.us';
+const GROUP_JID = 'group-123@g.us';
 
 beforeEach(() => {
   freshDb();
-  createPlace({ name: 'Padel Base', address: 'Musterstr. 1' });
+  createPlace({ groupId: GROUP, name: 'Padel Base', address: 'Musterstr. 1' });
 });
 
 function ctx(as: User, opts: Partial<CommandContext> = {}): CommandContext {
   const settings = getSettings();
   return {
+    groupId: GROUP,
     user: as,
     isAdmin: as.is_admin === 1,
-    chatId: GROUP,
+    chatId: GROUP_JID,
     isGroup: true,
     dict: t(settings.language),
     settings,
@@ -301,19 +302,19 @@ describe('dual confirmation policy', () => {
     // The sender says they paid: still needs Alice's word.
     const out = send('!confirm Alice', bob, { isGroup: false, chatId: 'dm-bob' });
     expect(textOf(out)).toContain('Waiting for them to confirm');
-    expect(balanceFor(bob.id)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
+    expect(balanceFor(bob.id, GROUP)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
 
     const code = out[0]!.text.match(/\*([A-Z0-9]{4})\*/)![1]!;
 
     // Bob cannot approve his own claim.
     const selfApprove = send(`!approve ${code}`, bob, { isGroup: false, chatId: 'dm-bob' });
     expect(textOf(selfApprove)).toContain('Only the person receiving');
-    expect(balanceFor(bob.id)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
+    expect(balanceFor(bob.id, GROUP)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
 
     // Alice signs off and only now is it real.
     const approved = send(`!approve ${code}`, alice, { isGroup: false, chatId: 'dm-alice' });
     expect(textOf(approved)).toContain('confirmed');
-    expect(balanceFor(bob.id)).toEqual([]);
+    expect(balanceFor(bob.id, GROUP)).toEqual([]);
   });
 
   it('routes approval to the sender when the receiver files the claim', () => {
@@ -329,7 +330,7 @@ describe('dual confirmation policy', () => {
     const code = out[0]!.text.match(/\*([A-Z0-9]{4})\*/)![1]!;
     const approved = send(`!approve ${code}`, bob, { isGroup: false, chatId: 'dm-bob' });
     expect(textOf(approved)).toContain('confirmed');
-    expect(balanceFor(bob.id)).toEqual([]);
+    expect(balanceFor(bob.id, GROUP)).toEqual([]);
   });
 
   it('still lets an admin confirm directly', () => {
@@ -342,7 +343,7 @@ describe('dual confirmation policy', () => {
 
     const out = send('!confirm Bob', alice, { isGroup: false });
     expect(textOf(out)).toContain('Payment recorded');
-    expect(balanceFor(bob.id)).toEqual([]);
+    expect(balanceFor(bob.id, GROUP)).toEqual([]);
   });
 
   it('rejecting leaves the debt standing', () => {
@@ -353,6 +354,6 @@ describe('dual confirmation policy', () => {
     const code = out[0]!.text.match(/\*([A-Z0-9]{4})\*/)![1]!;
 
     send(`!reject ${code}`, alice, { isGroup: false, chatId: 'dm-alice' });
-    expect(balanceFor(bob.id)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
+    expect(balanceFor(bob.id, GROUP)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
   });
 });

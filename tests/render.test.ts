@@ -3,7 +3,7 @@ import { bookingCard, bookingList } from '../src/bot/render.js';
 import { createBooking, joinBooking, listUpcoming } from '../src/domain/bookings.js';
 import { createPlace } from '../src/domain/places.js';
 import { t } from '../src/i18n/index.js';
-import { booking, freshDb, inHours, user } from './helpers.js';
+import { GROUP, booking, freshDb, inHours, user } from './helpers.js';
 
 const dict = t('en');
 
@@ -51,13 +51,13 @@ describe('list shows who is in', () => {
     joinBooking(b.code, user('Bob'));
     joinBooking(b.code, user('Carol'));
 
-    const list = bookingList(listUpcoming(), dict);
+    const list = bookingList(listUpcoming(GROUP), dict);
     expect(list).toContain('Alice, Bob, Carol');
   });
 
   it('says so when nobody has joined yet', () => {
     booking(user('Alice'), { joinAsPlayer: false });
-    expect(bookingList(listUpcoming(), dict)).toContain('nobody yet');
+    expect(bookingList(listUpcoming(GROUP), dict)).toContain('nobody yet');
   });
 
   it('leaves waiting-list players out of the confirmed line', () => {
@@ -66,7 +66,7 @@ describe('list shows who is in', () => {
     joinBooking(b.code, user('Bob'));
     joinBooking(b.code, user('Carol')); // waitlisted
 
-    const list = bookingList(listUpcoming(), dict);
+    const list = bookingList(listUpcoming(GROUP), dict);
     expect(list).toContain('Alice, Bob');
     expect(list).not.toContain('Carol');
     expect(list).toContain('+1'); // still counted as waiting
@@ -77,10 +77,12 @@ describe('list shows the venue details', () => {
   it('shows court, address and notes when the booking has them', () => {
     const alice = user('Alice');
     const place = createPlace({
+      groupId: GROUP,
       name: 'Ocean Athletics Club',
       address: 'Jean-Gardner-Batten-Straße 1, 60549 Frankfurt am Main',
     });
     const created = createBooking({
+      groupId: GROUP,
       creator: alice,
       placeId: place.id,
       startsAtIso: inHours(48),
@@ -92,7 +94,7 @@ describe('list shows the venue details', () => {
     });
     if (!created.ok) throw new Error('setup failed');
 
-    const list = bookingList(listUpcoming(), dict);
+    const list = bookingList(listUpcoming(GROUP), dict);
     expect(list).toContain('Court 2');
     expect(list).toContain('Jean-Gardner-Batten-Straße 1');
     expect(list).toContain('Notes: 2 hours booking');
@@ -101,8 +103,9 @@ describe('list shows the venue details', () => {
 
   it('omits what the booking does not have', () => {
     const alice = user('Alice');
-    const place = createPlace({ name: 'Bare Club' });
+    const place = createPlace({ groupId: GROUP, name: 'Bare Club' });
     const created = createBooking({
+      groupId: GROUP,
       creator: alice,
       placeId: place.id,
       startsAtIso: inHours(48),
@@ -110,13 +113,14 @@ describe('list shows the venue details', () => {
     });
     if (!created.ok) throw new Error('setup failed');
 
-    const list = bookingList(listUpcoming(), dict);
+    const list = bookingList(listUpcoming(GROUP), dict);
     expect(list).not.toContain('Court');
     expect(list).not.toContain('Notes:');
   });
 
   it('does not repeat a free-text place as its own address', () => {
     const created = createBooking({
+      groupId: GROUP,
       creator: user('Alice'),
       customPlace: 'Some random court',
       startsAtIso: inHours(48),
@@ -124,7 +128,7 @@ describe('list shows the venue details', () => {
     });
     if (!created.ok) throw new Error('setup failed');
 
-    const list = bookingList(listUpcoming(), dict);
+    const list = bookingList(listUpcoming(GROUP), dict);
     // Once on the booking row, never echoed back as an address line.
     expect(list.match(/Some random court/g)).toHaveLength(1);
   });

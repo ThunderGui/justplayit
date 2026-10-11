@@ -3,6 +3,7 @@ import { nowIso } from '../util/datetime.js';
 
 export interface Place {
   id: number;
+  group_id: number;
   name: string;
   address: string | null;
   maps_url: string | null;
@@ -10,10 +11,13 @@ export interface Place {
   created_at: string;
 }
 
-export function listPlaces(includeInactive = false): Place[] {
+export function listPlaces(groupId: number, includeInactive = false): Place[] {
   return includeInactive
-    ? many<Place>('SELECT * FROM places ORDER BY name COLLATE NOCASE')
-    : many<Place>('SELECT * FROM places WHERE active = 1 ORDER BY name COLLATE NOCASE');
+    ? many<Place>('SELECT * FROM places WHERE group_id = ? ORDER BY name COLLATE NOCASE', groupId)
+    : many<Place>(
+        'SELECT * FROM places WHERE group_id = ? AND active = 1 ORDER BY name COLLATE NOCASE',
+        groupId,
+      );
 }
 
 export function findPlaceById(id: number): Place | undefined {
@@ -25,11 +29,14 @@ export function findPlaceById(id: number): Place | undefined {
  * a unique prefix/substring match, so "padel b" finds "Padel Base".
  * An ambiguous match returns null so the caller can ask them to be specific.
  */
-export function resolvePlace(input: string): { place?: Place; ambiguous?: Place[] } {
+export function resolvePlace(
+  input: string,
+  groupId: number,
+): { place?: Place; ambiguous?: Place[] } {
   const query = input.trim().toLowerCase();
   if (!query) return {};
 
-  const places = listPlaces();
+  const places = listPlaces(groupId);
   const exact = places.find((p) => p.name.toLowerCase() === query);
   if (exact) return { place: exact };
 
@@ -40,12 +47,14 @@ export function resolvePlace(input: string): { place?: Place; ambiguous?: Place[
 }
 
 export function createPlace(input: {
+  groupId: number;
   name: string;
   address?: string | null;
   mapsUrl?: string | null;
 }): Place {
   const { lastInsertRowid } = run(
-    'INSERT INTO places (name, address, maps_url, active, created_at) VALUES (?, ?, ?, 1, ?)',
+    'INSERT INTO places (group_id, name, address, maps_url, active, created_at) VALUES (?, ?, ?, ?, 1, ?)',
+    input.groupId,
     input.name.trim(),
     input.address?.trim() || null,
     input.mapsUrl?.trim() || null,

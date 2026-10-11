@@ -10,6 +10,8 @@ import {
 import type { PairBalance } from '../domain/ledger.js';
 import { getSettings } from '../domain/settings.js';
 import { displayName, findUserById } from '../domain/users.js';
+import { externalPlayers } from '../domain/external-sync.js';
+import { findGroupById, type Sport } from '../domain/groups.js';
 import type { Dict } from '../i18n/index.js';
 import { googleCalendarUrl } from '../util/calendar.js';
 import { formatDateTime, formatDayHeading } from '../util/datetime.js';
@@ -20,8 +22,18 @@ import { formatMoney } from '../util/money.js';
  * these messages are read on a phone, in a busy group chat.
  */
 
+/** Title words per sport, capitalised for the calendar entry. */
+const SPORT_TITLE: Record<Sport, string> = {
+  padel: 'Padel',
+  tennis: 'Tennis',
+  squash: 'Squash',
+  badminton: 'Badminton',
+  other: 'Game',
+};
+
 export function bookingTitle(booking: Booking): string {
-  return `Padel — ${placeLabel(booking)}`;
+  const sport = findGroupById(booking.group_id)?.sport ?? 'padel';
+  return `${SPORT_TITLE[sport]} — ${placeLabel(booking)}`;
 }
 
 export function calendarLink(booking: Booking): string {
@@ -39,8 +51,7 @@ export function calendarLink(booking: Booking): string {
 }
 
 /** The full detail card, used on create/join and on `show <id>`. */
-export function bookingCard(booking: Booking, dict: Dict): string {
-  const settings = getSettings();
+export function bookingCard(booking: Booking, dict: Dict, settings = getSettings()): string {
   const tz = settings.timezone;
   const lang = settings.language;
   const L = dict.label;
@@ -53,6 +64,18 @@ export function bookingCard(booking: Booking, dict: Dict): string {
     lines.push(`${L.when}: ${formatDateTime(booking.starts_at, tz, lang)}`);
     if (booking.court) lines.push(`${L.court}: ${booking.court}`);
     if (booking.notes) lines.push(`${L.notes}: ${booking.notes}`);
+
+    // Live data from the platform, when the bot has synced it.
+    const xp = externalPlayers(booking);
+    if (xp.length > 0) {
+      const slots =
+        booking.external_slots_free != null && booking.external_slots_total != null
+          ? ` (${booking.external_slots_free} ${L.spotsLeft})`
+          : '';
+      lines.push(`${L.players}: ${xp.length}${booking.external_slots_total ? '/' + booking.external_slots_total : ''}${slots}`);
+      lines.push(...xp.map((n) => `  • ${n}`));
+    }
+
     lines.push(`${L.link}: ${booking.external_url}`);
     lines.push('');
     lines.push(dict.external.managedNote(provider));
@@ -114,8 +137,7 @@ export function bookingCard(booking: Booking, dict: Dict): string {
 }
 
 /** One compact line per booking, grouped under day headings. */
-export function bookingList(bookings: Booking[], dict: Dict): string {
-  const settings = getSettings();
+export function bookingList(bookings: Booking[], dict: Dict, settings = getSettings()): string {
   const tz = settings.timezone;
   const lang = settings.language;
 
@@ -137,8 +159,14 @@ export function bookingList(bookings: Booking[], dict: Dict): string {
 
     if (isExternal(booking)) {
       const provider = booking.external_provider ?? 'external';
-      out.push(`*${booking.code}* ${time} · ${placeLabel(booking)} · _${provider}_`);
+      const xp = externalPlayers(booking);
+      const xslots =
+        booking.external_slots_total != null
+          ? ` · ${xp.length}/${booking.external_slots_total}`
+          : '';
+      out.push(`*${booking.code}* ${time} · ${placeLabel(booking)} · _${provider}_${xslots}`);
       out.push(...venueLines(booking, dict));
+      if (xp.length > 0) out.push(`   ${xp.join(', ')}`);
       out.push(`   ${booking.external_url}`);
       if (booking.notes) out.push(`   ${dict.label.notes}: ${booking.notes}`);
       continue;

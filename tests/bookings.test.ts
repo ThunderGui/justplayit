@@ -12,14 +12,14 @@ import { setSettings } from '../src/domain/settings.js';
 import { parseDate, parseDuration, parseTime } from '../src/util/datetime.js';
 import { normaliseCode, randomCode } from '../src/util/ids.js';
 import { formatMoney, parseMoneyToCents, splitCents } from '../src/util/money.js';
-import { booking, freshDb, inHours, user } from './helpers.js';
+import { GROUP, booking, freshDb, inHours, user } from './helpers.js';
 
 beforeEach(() => freshDb());
 
 describe('waiting list', () => {
   it('waitlists players past max and promotes the first in line when a slot frees', () => {
     const alice = user('Alice');
-    const players = ['Bob', 'Carol', 'Dave', 'Erin', 'Frank'].map(user);
+    const players = ['Bob', 'Carol', 'Dave', 'Erin', 'Frank'].map((n) => user(n));
 
     const b = booking(alice, { maxPlayers: 4 }); // Alice already occupies slot 1
     expect(joinBooking(b.code, players[0]!).ok).toBe(true);
@@ -84,13 +84,14 @@ describe('waiting list', () => {
 describe('double booking', () => {
   it('rejects a booking that overlaps an existing one', () => {
     const alice = user('Alice');
-    const place = createPlace({ name: 'Padel Base' });
+    const place = createPlace({ groupId: GROUP, name: 'Padel Base' });
     const start = inHours(48);
 
     booking(alice, { startsAtIso: start, durationMin: 90 });
 
     // Starts 60 minutes in — still inside the first 90-minute slot.
     const overlapping = createBooking({
+      groupId: GROUP,
       creator: alice,
       placeId: place.id,
       startsAtIso: DateTime.fromISO(start).plus({ minutes: 60 }).toISO()!,
@@ -104,12 +105,13 @@ describe('double booking', () => {
 
   it('allows a booking that starts exactly when the previous one ends', () => {
     const alice = user('Alice');
-    const place = createPlace({ name: 'Padel Base' });
+    const place = createPlace({ groupId: GROUP, name: 'Padel Base' });
     const start = inHours(48);
 
     booking(alice, { startsAtIso: start, durationMin: 90 });
 
     const adjacent = createBooking({
+      groupId: GROUP,
       creator: alice,
       placeId: place.id,
       startsAtIso: DateTime.fromISO(start).plus({ minutes: 90 }).toISO()!,
@@ -122,13 +124,14 @@ describe('double booking', () => {
 
   it('frees the slot again once the clashing booking is cancelled', () => {
     const alice = user('Alice');
-    const place = createPlace({ name: 'Padel Base' });
+    const place = createPlace({ groupId: GROUP, name: 'Padel Base' });
     const start = inHours(48);
 
     const first = booking(alice, { startsAtIso: start });
     cancelBooking(first.code, alice, false);
 
     const replacement = createBooking({
+      groupId: GROUP,
       creator: alice,
       placeId: place.id,
       startsAtIso: start,
@@ -139,9 +142,10 @@ describe('double booking', () => {
 
   it('rejects a booking in the past', () => {
     const alice = user('Alice');
-    const place = createPlace({ name: 'Padel Base' });
+    const place = createPlace({ groupId: GROUP, name: 'Padel Base' });
 
     const result = createBooking({
+      groupId: GROUP,
       creator: alice,
       placeId: place.id,
       startsAtIso: inHours(-2),
@@ -168,9 +172,10 @@ describe('permissions', () => {
   it('honours the admin lock on per-booking cancellation limits', () => {
     setSettings({ allowPerBookingCancelLimit: false, defaultCancelLimitHours: 24 });
     const alice = user('Alice');
-    const place = createPlace({ name: 'Padel Base' });
+    const place = createPlace({ groupId: GROUP, name: 'Padel Base' });
 
     const result = createBooking({
+      groupId: GROUP,
       creator: alice,
       placeId: place.id,
       startsAtIso: inHours(72),
@@ -186,6 +191,7 @@ describe('permissions', () => {
     const alice = user('Alice');
 
     const result = createBooking({
+      groupId: GROUP,
       creator: alice,
       customPlace: 'Some random court',
       startsAtIso: inHours(72),

@@ -7,7 +7,7 @@ import {
   runSettlementAnnouncements,
   type Notifier,
 } from '../src/scheduler/jobs.js';
-import { booking, freshDb, inHours, user } from './helpers.js';
+import { GROUP, booking, freshDb, inHours, user } from './helpers.js';
 
 interface Sent { to: 'group' | number; text: string }
 
@@ -19,7 +19,7 @@ function flakyNotifier() {
     if (state.failing) throw new Error('Connection Closed');
   };
   const notifier: Notifier = {
-    async sendToGroup(text) { guard(); sent.push({ to: 'group', text }); },
+    async sendToGroup(_groupId, text) { guard(); sent.push({ to: 'group', text }); },
     async sendToUser(userId, text) { guard(); sent.push({ to: userId, text }); },
   };
   return { notifier, sent, state };
@@ -53,7 +53,7 @@ describe('a settlement that could not be announced', () => {
     await runAutoSettlement(notifier);
 
     // The money is real even though nothing could be sent.
-    expect(balanceFor(bob.id)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
+    expect(balanceFor(bob.id, GROUP)).toEqual([{ otherUserId: alice.id, cents: 1000 }]);
     expect(sent).toHaveLength(0);
     // Crucially, it is NOT marked as announced.
     expect(announcedJobs()).toHaveLength(0);

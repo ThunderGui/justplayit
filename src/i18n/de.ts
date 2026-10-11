@@ -52,6 +52,9 @@ export const de: Dict = {
     cancelled: 'Abgebrochen — es wurde nichts geändert.',
     nothingPending: 'Es wartet nichts auf deine Bestätigung.',
     sentPrivately: 'Ich habe dir die Details privat geschickt.',
+    whichGroup: (names: string) =>
+      `Du bist in mehreren Gruppen, die ich betreue — ich weiß nicht, welche du meinst:\n  • ${names}\n` +
+      'Schreib den Gruppennamen dazu, oder schick den Befehl einfach in der Gruppe selbst.',
     cannotDmYou:
       'Ich konnte dir nicht privat schreiben. Schick mir einmal eine Direktnachricht, damit ich dort antworten darf.',
   },
