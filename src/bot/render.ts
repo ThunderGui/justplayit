@@ -45,7 +45,7 @@ const SPORT_EMOJI: Record<Sport, string> = {
 };
 
 /** The group's sport as a single glyph, to head each card and list line. */
-function sportEmoji(booking: Booking): string {
+export function sportEmoji(booking: Booking): string {
   const sport = findGroupById(booking.group_id)?.sport;
   return (sport && SPORT_EMOJI[sport]) || '🎾';
 }

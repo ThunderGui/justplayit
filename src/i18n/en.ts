@@ -82,7 +82,7 @@ export const en = {
       `I do not know the place "${input}". Known places: ${places}`,
     ambiguousPlace: (matches: string) => `Which one do you mean? ${matches}`,
     rescheduled: (code: string, from: string, to: string) =>
-      `📅 Booking *${code}* has been moved.\n` +
+      `Booking *${code}* has been moved.\n` +
       `Was: ${from}\nNow: ${to}\n\n` +
       'Everyone already in keeps their spot. If the new time does not work for you, please leave the booking.',
     listEmpty: (prefix: string) =>
@@ -192,7 +192,7 @@ export const en = {
 
   /* ---- settlement ---- */
   settlement: {
-    header: (code: string) => `Game *${code}* is done — here is the split`,
+    header: (code: string) => `💰 Game *${code}* is done — here is the split`,
     perPlayer: (amount: string) => `Each player: ${amount}`,
     lateCancelNote: (name: string) => `${name} (late cancellation)`,
     payTo: (name: string, deadline: string) => `Please send your share to ${name} by ${deadline}.`,

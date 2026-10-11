@@ -254,12 +254,12 @@ export async function runFillReminders(notifier: Notifier): Promise<number> {
 
       await notifier.sendToGroup(
         group.id,
-        dict.misc.reminderUnfilled(
+        `📣 ${dict.misc.reminderUnfilled(
           booking.code,
           roster.confirmed.length,
           booking.min_players,
           settings.commandPrefix,
-        ),
+        )}`,
       );
       sent++;
     }

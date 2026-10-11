@@ -79,7 +79,7 @@ export const de: Dict = {
       `Den Ort "${input}" kenne ich nicht. Bekannte Orte: ${places}`,
     ambiguousPlace: (matches: string) => `Welchen meinst du? ${matches}`,
     rescheduled: (code: string, from: string, to: string) =>
-      `📅 Buchung *${code}* wurde verschoben.\n` +
+      `Buchung *${code}* wurde verschoben.\n` +
       `Vorher: ${from}\nJetzt: ${to}\n\n` +
       'Alle Angemeldeten behalten ihren Platz. Wenn die neue Zeit nicht passt, sag bitte ab.',
     listEmpty: (prefix: string) =>
@@ -182,7 +182,7 @@ export const de: Dict = {
   },
 
   settlement: {
-    header: (code: string) => `Spiel *${code}* ist gespielt — hier die Aufteilung`,
+    header: (code: string) => `💰 Spiel *${code}* ist gespielt — hier die Aufteilung`,
     perPlayer: (amount: string) => `Pro Person: ${amount}`,
     lateCancelNote: (name: string) => `${name} (kurzfristige Absage)`,
     payTo: (name: string, deadline: string) =>

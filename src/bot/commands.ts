@@ -34,7 +34,7 @@ import {
 import type { Dict } from '../i18n/index.js';
 import { formatDateTime, nowIso, parseDate, parseDateTime, parseDuration, parseTime, toUtcIso } from '../util/datetime.js';
 import { formatMoney, parseMoneyToCents } from '../util/money.js';
-import { balanceCard, bookingCard, bookingList } from './render.js';
+import { balanceCard, bookingCard, bookingList, sportEmoji } from './render.js';
 import { field, type ParsedCommand } from './parser.js';
 import { helpText } from './help.js';
 import { run } from '../db/index.js';
@@ -247,7 +247,7 @@ function handleBook(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] 
   if (!result.ok) return [reply(bookingErrorText(result.reason, ctx, result))];
 
   return [
-    toGroup(`${dict.booking.created(result.booking.code)}\n\n${bookingCard(result.booking, dict)}`),
+    toGroup(`${sportEmoji(result.booking)} ${dict.booking.created(result.booking.code)}\n\n${bookingCard(result.booking, dict)}`),
   ];
 }
 
@@ -327,7 +327,7 @@ function handleExternal(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessag
 
   return [
     toGroup(
-      `${dict.external.created(result.booking.code, provider)}\n\n${bookingCard(result.booking, dict)}`,
+      `${sportEmoji(result.booking)} ${dict.external.created(result.booking.code, provider)}\n\n${bookingCard(result.booking, dict)}`,
     ),
   ];
 }
@@ -367,7 +367,7 @@ function handleCancel(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[
 
   return [
     toGroup(
-      ctx.dict.booking.cancelled(result.booking.code, displayName(ctx.user)),
+      `❌ ${ctx.dict.booking.cancelled(result.booking.code, displayName(ctx.user))}`,
       result.notifyUserIds,
     ),
   ];
@@ -527,7 +527,7 @@ function applyLeave(
   if (result.promoted) {
     const promotedUser = findUserById(result.promoted.user_id);
     messages.push(
-      toGroup(dict.roster.promoted(displayName(promotedUser), booking.code), [
+      toGroup(`⬆️ ${dict.roster.promoted(displayName(promotedUser), booking.code)}`, [
         result.promoted.user_id,
       ]),
     );
@@ -1014,11 +1014,11 @@ function handleEditBooking(cmd: ParsedCommand, ctx: CommandContext): OutgoingMes
   if (result.scheduleChanged) {
     return [
       toGroup(
-        dict.booking.rescheduled(
+        `🔁 ${dict.booking.rescheduled(
           result.booking.code,
           formatDateTime(result.previousStartsAt, tz, settings.language),
           formatDateTime(result.booking.starts_at, tz, settings.language),
-        ),
+        )}`,
         affectedUserIds(result.booking.id),
       ),
     ];

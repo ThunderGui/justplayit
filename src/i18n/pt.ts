@@ -79,7 +79,7 @@ export const pt: Dict = {
       `Não conheço o local "${input}". Locais conhecidos: ${places}`,
     ambiguousPlace: (matches: string) => `Qual deles queres dizer? ${matches}`,
     rescheduled: (code: string, from: string, to: string) =>
-      `📅 A reserva *${code}* foi alterada.\n` +
+      `A reserva *${code}* foi alterada.\n` +
       `Antes: ${from}\nAgora: ${to}\n\n` +
       'Quem já está inscrito mantém a vaga. Se o novo horário não te servir, sai da reserva.',
     listEmpty: (prefix: string) =>
@@ -182,7 +182,7 @@ export const pt: Dict = {
   },
 
   settlement: {
-    header: (code: string) => `O jogo *${code}* terminou — aqui está a divisão`,
+    header: (code: string) => `💰 O jogo *${code}* terminou — aqui está a divisão`,
     perPlayer: (amount: string) => `Por jogador: ${amount}`,
     lateCancelNote: (name: string) => `${name} (cancelamento tardio)`,
     payTo: (name: string, deadline: string) => `Envia a tua parte a ${name} até ${deadline}.`,
