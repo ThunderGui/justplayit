@@ -247,12 +247,7 @@ function handleBook(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] 
 /* ------------------------------------------------------------------ */
 
 const EXTERNAL_TEMPLATE = (prefix: string) =>
-  [
-    `${prefix}playtomic`,
-    'url: https://playtomic.io/…',
-    '',
-    '(date and time are read from the link — add them only if the link cannot be reached)',
-  ].join('\n');
+  `${prefix}playtomic <link> — just paste the Playtomic link; the rest is read from it.`;
 
 function handleExternal(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] {
   const { dict, settings } = ctx;

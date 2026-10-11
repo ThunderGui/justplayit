@@ -70,3 +70,13 @@ describe('Playtomic date/time pre-fill from the link', () => {
     expect(field(cmd.fields, 'date')).toBeUndefined();
   });
 });
+
+describe('bare link, no url: label', () => {
+  it('fills from ".playtomic <link>" with no field labels at all', async () => {
+    setProviders([mockProvider('2026-09-03T17:00:00Z')]);
+    const cmd = parse('!playtomic https://playtomic.io/m/abc');
+    await prefillExternalFromLink(cmd, 'Europe/Berlin');
+    expect(field(cmd.fields, 'date')).toBe('2026-09-03');
+    expect(field(cmd.fields, 'time')).toBe('19:00');
+  });
+})
