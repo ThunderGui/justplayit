@@ -373,37 +373,42 @@ export function placesPage(groupId: number): string {
 /* People                                                              */
 /* ------------------------------------------------------------------ */
 
-export function peoplePage(): string {
-  const users = listUsers().filter((u) => !u.anonymised_at);
+export function peoplePage(groupId: number): string {
+  // This group's members only — People is scoped like every other page. Admin
+  // status mirrors the WhatsApp group, so it is shown rather than toggled here.
+  const members = listMembers(groupId)
+    .map((m) => ({ member: m, user: findUserById(m.user_id) }))
+    .filter((r): r is { member: typeof r.member; user: User } => r.user != null && !r.user.anonymised_at)
+    .sort((a, b) => displayName(a.user).localeCompare(displayName(b.user)));
 
   return `
   <h1>People</h1>
-  <p class="sub">Everyone the bot has seen. Admins can manage bookings and settle games.</p>
+  <p class="sub">
+    Members of this group. Admins are mirrored from the WhatsApp group itself,
+    so promote or demote someone there, not here. Payment details and erasure
+    apply to the person across every group.
+  </p>
 
   <div class="card">
     ${
-      users.length === 0
-        ? '<div class="empty">Nobody yet. People appear here once they message the group.</div>'
+      members.length === 0
+        ? '<div class="empty">Nobody yet. People appear here once they message this group.</div>'
         : `<div class="table-wrap"><table>
             <tr><th>Name</th><th>Payment details</th><th>Admin</th><th></th></tr>
-            ${users
+            ${members
               .map(
-                (u: User) => `<tr>
+                ({ member, user: u }) => `<tr>
               <td>${esc(displayName(u))}</td>
               <td>
-                <form method="post" action="/people/${u.id}/handle" class="inline" style="display:flex;gap:6px">
+                <form method="post" action="/people/${u.id}/handle?g=${groupId}" class="inline" style="display:flex;gap:6px">
                   <input type="text" name="handle" value="${esc(u.payment_handle ?? '')}"
                          placeholder="paypal.me/… or IBAN" style="min-width:200px">
                   <button class="secondary" type="submit">Save</button>
                 </form>
               </td>
-              <td>${u.is_admin ? '<span class="pill ok">Admin</span>' : '<span class="muted">—</span>'}</td>
+              <td>${member.is_admin ? '<span class="pill ok">Admin</span>' : '<span class="muted">—</span>'}</td>
               <td>
-                <form method="post" action="/people/${u.id}/admin" class="inline">
-                  <input type="hidden" name="value" value="${u.is_admin ? '0' : '1'}">
-                  <button class="secondary" type="submit">${u.is_admin ? 'Revoke admin' : 'Make admin'}</button>
-                </form>
-                <form method="post" action="/people/${u.id}/forget" class="inline"
+                <form method="post" action="/people/${u.id}/forget?g=${groupId}" class="inline"
                       onsubmit="return confirm('Erase personal data for ${esc(displayName(u))}? This cannot be undone.')">
                   <button class="danger" type="submit">Erase</button>
                 </form>

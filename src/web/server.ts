@@ -371,7 +371,7 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.get('/people', (req, res) => {
-    sendFor(res, req, peoplePage(), { title: 'People', active: '/people', flash: flashFrom(req) });
+    sendFor(res, req, peoplePage(groupIdFrom(req)), { title: 'People', active: '/people', flash: flashFrom(req) });
   });
 
   app.post('/people/:id/admin', (req, res) => {
@@ -390,16 +390,18 @@ export function createWebApp(deps: WebDeps) {
   app.post('/people/:id/handle', (req, res) => {
     const handle = String(req.body?.handle ?? '').trim();
     setPaymentHandle(Number(req.params.id), handle || null);
-    res.redirect('/people?ok=' + encodeURIComponent('Payment details saved.'));
+    res.redirect(`/people?g=${groupIdFrom(req)}&ok=` + encodeURIComponent('Payment details saved.'));
   });
 
   app.post('/people/:id/forget', (req, res) => {
     const userId = Number(req.params.id);
     if (findUserById(userId)?.is_admin && listAdmins().length <= 1) {
-      return res.redirect('/people?err=' + encodeURIComponent('Cannot erase the only admin.'));
+      return res.redirect(
+        `/people?g=${groupIdFrom(req)}&err=` + encodeURIComponent('Cannot erase the only admin.'),
+      );
     }
     anonymiseUser(userId);
-    res.redirect('/people?ok=' + encodeURIComponent('Personal data erased.'));
+    res.redirect(`/people?g=${groupIdFrom(req)}&ok=` + encodeURIComponent('Personal data erased.'));
   });
 
   app.get('/money', (req, res) => {
