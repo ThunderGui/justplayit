@@ -10,6 +10,15 @@ services:
     # instead of coming back on the next reboot.
     restart: unless-stopped
 
+    # Docker's embedded resolver (127.0.0.11) forwards to the host's nameserver,
+    # and that forwarder has gotten stuck before — leaving the container unable
+    # to resolve web.whatsapp.com (EAI_AGAIN) and stuck in a reconnect loop for
+    # hours while the host itself resolved fine. Pin reliable public resolvers
+    # so the bot never depends on that flaky forwarder.
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
+
     # Only needed to draw the QR code on first link. Harmless afterwards, and
     # worth keeping for the day the WhatsApp session has to be re-established.
     tty: true
