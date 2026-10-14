@@ -213,6 +213,20 @@ export const en = {
       `To manage places:\n  ${prefix}place add <name> | <address>\n  ${prefix}place remove <name>\n  ${prefix}place list`,
   },
 
+  /* ---- .use (pick a group in a private chat) ---- */
+  use: {
+    onlyInDm: 'Use this in a private chat with me — in a group I already know which one.',
+    onlyOneGroup: 'You are only in one group, so there is nothing to switch between.',
+    set: (name: string) => `Now acting on *${name}*. Your next commands here apply to it until you switch.`,
+    current: (name: string, prefix: string) =>
+      `You are acting on *${name}*. Switch with ${prefix}use <group>, or ${prefix}use none to clear.`,
+    none: (prefix: string, groups: string) =>
+      `No group chosen. Pick one with ${prefix}use <group>.\nYours:\n${groups}`,
+    cleared: 'Cleared — I will ask which group again, or go by the name in your message.',
+    notFound: (input: string, groups: string) =>
+      `I do not see a group "${input}" that you are in. Yours:\n${groups}`,
+  },
+
   /* ---- misc ---- */
   misc: {
     reportThanks: (id: number) => `Thanks — logged as report #${id}. The admins will see it.`,

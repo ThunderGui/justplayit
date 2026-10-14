@@ -349,4 +349,19 @@ export const MIGRATIONS: Migration[] = [
     ALTER TABLE bookings ADD COLUMN external_sync_error TEXT;
     `,
   },
+
+  {
+    id: 5,
+    name: 'dm_group_selection',
+    up: `
+    /* Remembers which group an admin is acting on in a private chat, so a
+       multi-group admin can pick one with ".use <group>" and then issue
+       commands without naming the group every time. One row per person. */
+    CREATE TABLE dm_group_selection (
+      user_id    INTEGER PRIMARY KEY REFERENCES users(id),
+      group_id   INTEGER NOT NULL REFERENCES groups(id),
+      updated_at TEXT NOT NULL
+    );
+    `,
+  },
 ];

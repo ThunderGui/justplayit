@@ -10,6 +10,7 @@ import { getSettings } from '../domain/settings.js';
 import {
   ensureGroup,
   ensureMember,
+  getDmGroup,
   groupsForUser,
   isGroupAdmin,
   syncGroupAdmins,
@@ -62,8 +63,20 @@ export function createDispatcher(client: WhatsAppClient) {
       if (mine.length === 0) return; // not in any group the bot serves
       group = mine[0]!;
       if (mine.length > 1) {
-        const chosen = pickGroupFromMessage(message.text, mine);
-        if (!chosen) {
+        // Precedence: a group named in this message wins; otherwise the one the
+        // admin picked with `.use`; otherwise we have to ask — unless the
+        // message is itself a `.use`, which must always get through.
+        const explicit = pickGroupFromMessage(message.text, mine);
+        const stored = explicit ? null : getDmGroup(user.id);
+        group = explicit ?? stored ?? mine[0]!;
+
+        const peek = parseMessage(message.text, {
+          prefix: getSettings(group.id).commandPrefix,
+          prefixOptional: true,
+        });
+        const isUse = peek.kind === 'command' && peek.command.name === 'use';
+
+        if (!explicit && !stored && !isUse) {
           await client
             .sendText(
               message.chatId,
@@ -72,7 +85,6 @@ export function createDispatcher(client: WhatsAppClient) {
             .catch(() => undefined);
           return;
         }
-        group = chosen;
       }
     }
 

@@ -21,6 +21,7 @@ export type CommandName =
   | 'places'
   | 'edit'
   | 'payment'
+  | 'use'
   | 'report'
   | 'privacy'
   | 'forgetme'
@@ -66,6 +67,8 @@ const ALIASES: Record<string, CommandName> = {
   edit: 'edit', reschedule: 'edit', change: 'edit', modify: 'edit', move: 'edit',
 
   payment: 'payment', paydetails: 'payment', handle: 'payment', iban: 'payment', paypal: 'payment',
+
+  use: 'use', switch: 'use', 'use group': 'use',
 
   report: 'report', bug: 'report', suggest: 'report', feedback: 'report',
 

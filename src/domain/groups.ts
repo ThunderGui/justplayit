@@ -194,3 +194,34 @@ export function syncGroupAdmins(groupId: number, adminUserIds: number[]): number
 
   return changed;
 }
+
+/* ------------------------------------------------------------------ */
+/* Private-chat group selection (".use <group>")                       */
+/* ------------------------------------------------------------------ */
+
+/** The group this person last chose in a DM, if it is still one they belong to. */
+export function getDmGroup(userId: number): Group | undefined {
+  const row = one<{ group_id: number }>(
+    'SELECT group_id FROM dm_group_selection WHERE user_id = ?',
+    userId,
+  );
+  if (!row) return undefined;
+  const group = findGroupById(row.group_id);
+  // Only honour it if they are still a member — memberships can change.
+  if (!group || !group.active || !findMember(group.id, userId)) return undefined;
+  return group;
+}
+
+export function setDmGroup(userId: number, groupId: number): void {
+  run(
+    `INSERT INTO dm_group_selection (user_id, group_id, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET group_id = excluded.group_id, updated_at = excluded.updated_at`,
+    userId,
+    groupId,
+    nowIso(),
+  );
+}
+
+export function clearDmGroup(userId: number): void {
+  run('DELETE FROM dm_group_selection WHERE user_id = ?', userId);
+}

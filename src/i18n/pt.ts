@@ -202,6 +202,19 @@ export const pt: Dict = {
       `Gerir locais:\n  ${prefix}place add <nome> | <endereço>\n  ${prefix}place remove <nome>\n  ${prefix}place list`,
   },
 
+  use: {
+    onlyInDm: 'Usa isto no chat privado comigo — num grupo já sei qual é.',
+    onlyOneGroup: 'Só estás num grupo, não há nada para alternar.',
+    set: (name: string) => `A agir sobre *${name}*. Os teus próximos comandos aqui aplicam-se a ele até trocares.`,
+    current: (name: string, prefix: string) =>
+      `Estás a agir sobre *${name}*. Troca com ${prefix}use <grupo>, ou ${prefix}use none para limpar.`,
+    none: (prefix: string, groups: string) =>
+      `Nenhum grupo escolhido. Escolhe com ${prefix}use <grupo>.\nOs teus:\n${groups}`,
+    cleared: 'Limpo — volto a perguntar qual grupo, ou uso o nome na tua mensagem.',
+    notFound: (input: string, groups: string) =>
+      `Não vejo um grupo "${input}" onde estejas. Os teus:\n${groups}`,
+  },
+
   misc: {
     reportThanks: (id: number) => `Obrigado — registado como reporte #${id}. Os administradores vão ver.`,
     reportEmpty: 'Descreve o problema ou a ideia a seguir ao comando.',

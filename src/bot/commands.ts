@@ -38,6 +38,7 @@ import { formatDateTime, nowIso, parseDate, parseDateTime, parseDuration, parseT
 import { formatMoney, parseMoneyToCents } from '../util/money.js';
 import { balanceCard, bookingCard, bookingList, sportEmoji } from './render.js';
 import { providerFor } from '../providers/index.js';
+import { getDmGroup, setDmGroup, clearDmGroup, groupsForUser } from '../domain/groups.js';
 import { field, type ParsedCommand } from './parser.js';
 import { helpText } from './help.js';
 import { run } from '../db/index.js';
@@ -146,6 +147,8 @@ export function handleCommand(cmd: ParsedCommand, ctx: CommandContext): Outgoing
       return handleEditBooking(cmd, ctx);
     case 'payment':
       return handlePayment(cmd, ctx);
+    case 'use':
+      return handleUse(cmd, ctx);
     case 'report':
       return handleReport(cmd, ctx);
     case 'privacy':
@@ -1072,6 +1075,43 @@ function handlePayment(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage
 
   setPaymentHandle(ctx.user.id, value);
   return [reply(dict.payment.handleSet(value))];
+}
+
+/* ------------------------------------------------------------------ */
+/* .use — pick which group a private chat acts on                      */
+/* ------------------------------------------------------------------ */
+
+function handleUse(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] {
+  const { dict, settings } = ctx;
+  const prefix = settings.commandPrefix;
+
+  // Only meaningful in a DM — in a group the chat already fixes the group.
+  if (ctx.isGroup) return [reply(dict.use.onlyInDm)];
+
+  const mine = groupsForUser(ctx.user.id);
+  if (mine.length <= 1) return [reply(dict.use.onlyOneGroup)];
+
+  const list = mine.map((g) => `  • ${g.name ?? g.wa_jid}`).join('\n');
+  const arg = cmd.rest.replace(/^\s*(group)\s+/i, '').trim();
+
+  // Bare ".use" shows the current selection (or how to set one).
+  if (!arg) {
+    const current = getDmGroup(ctx.user.id);
+    return [reply(current ? dict.use.current(current.name ?? current.wa_jid, prefix) : dict.use.none(prefix, list))];
+  }
+
+  if (/^(none|clear|reset|off)$/i.test(arg)) {
+    clearDmGroup(ctx.user.id);
+    return [reply(dict.use.cleared)];
+  }
+
+  // Match the typed name against the groups this person is in.
+  const lower = arg.toLowerCase();
+  const matches = mine.filter((g) => (g.name ?? '').toLowerCase().includes(lower));
+  if (matches.length !== 1) return [reply(dict.use.notFound(arg, list))];
+
+  setDmGroup(ctx.user.id, matches[0]!.id);
+  return [reply(dict.use.set(matches[0]!.name ?? matches[0]!.wa_jid))];
 }
 
 /* ------------------------------------------------------------------ */

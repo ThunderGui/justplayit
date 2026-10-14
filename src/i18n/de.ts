@@ -203,6 +203,19 @@ export const de: Dict = {
       `Orte verwalten:\n  ${prefix}place add <Name> | <Adresse>\n  ${prefix}place remove <Name>\n  ${prefix}place list`,
   },
 
+  use: {
+    onlyInDm: 'Nutze das im Privatchat mit mir — in einer Gruppe weiß ich schon, welche.',
+    onlyOneGroup: 'Du bist nur in einer Gruppe, es gibt nichts zu wechseln.',
+    set: (name: string) => `Aktiv auf *${name}*. Deine nächsten Befehle hier gelten dafür, bis du wechselst.`,
+    current: (name: string, prefix: string) =>
+      `Du bist auf *${name}* aktiv. Wechseln mit ${prefix}use <Gruppe>, löschen mit ${prefix}use none.`,
+    none: (prefix: string, groups: string) =>
+      `Keine Gruppe gewählt. Wähle mit ${prefix}use <Gruppe>.\nDeine:\n${groups}`,
+    cleared: 'Gelöscht — ich frage wieder nach oder richte mich nach dem Namen in deiner Nachricht.',
+    notFound: (input: string, groups: string) =>
+      `Ich sehe keine Gruppe "${input}", in der du bist. Deine:\n${groups}`,
+  },
+
   misc: {
     reportThanks: (id: number) => `Danke — als Meldung #${id} erfasst. Die Admins sehen sie.`,
     reportEmpty: 'Bitte beschreibe das Problem oder die Idee nach dem Befehl.',

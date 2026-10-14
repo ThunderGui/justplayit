@@ -59,6 +59,7 @@ export function helpText(dict: Dict, settings: Settings, isAdmin: boolean): stri
       `${p}approve <payment-id> / ${p}reject <payment-id>`,
       `${p}balance — also shows the whole group's balance`,
       `${p}place add <name> | <address>  ·  ${p}place remove <name>`,
+      `${p}use <group> — in a private chat, pick which group your commands act on`,
       'Everything else is configured in the web console.',
     );
   }
