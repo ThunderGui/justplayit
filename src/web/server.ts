@@ -76,22 +76,32 @@ function issueToken(secret: string, subject = 'admin'): string {
   return `${payload}.${sign(payload, secret)}`;
 }
 
-function verifyToken(token: string | undefined, secret: string): boolean {
-  if (!token) return false;
+/** Returns the logged-in subject (username, or 'owner') if the token is valid. */
+function tokenSubject(token: string | undefined, secret: string): string | null {
+  if (!token) return null;
   const parts = token.split('.');
-  if (parts.length !== 3) return false;
+  if (parts.length !== 3) return null;
 
-  const [subject, expiresRaw, signature] = parts as [string, string, string];
-  const payload = `${subject}.${expiresRaw}`;
+  const [subjectB64, expiresRaw, signature] = parts as [string, string, string];
+  const payload = `${subjectB64}.${expiresRaw}`;
 
   const expected = sign(payload, secret);
-  // Timing-safe compare on equal-length buffers only.
   const a = Buffer.from(signature);
   const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return false;
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
 
   const expires = Number(expiresRaw);
-  return Number.isFinite(expires) && expires > Date.now();
+  if (!Number.isFinite(expires) || expires <= Date.now()) return null;
+
+  try {
+    return Buffer.from(subjectB64, 'base64url').toString() || null;
+  } catch {
+    return null;
+  }
+}
+
+function verifyToken(token: string | undefined, secret: string): boolean {
+  return tokenSubject(token, secret) != null;
 }
 
 export function createWebApp(deps: WebDeps) {
@@ -145,6 +155,7 @@ export function createWebApp(deps: WebDeps) {
       layout(body, {
         ...options,
         currentGroupId: groupIdFrom(req),
+        isOwner: tokenSubject(req.cookies?.[SESSION_COOKIE], secret) === 'owner',
         groups: listAllGroups(true).map((gr) => ({
           id: gr.id,
           label: gr.name ?? `Group ${gr.id}`,
@@ -607,7 +618,21 @@ export function createWebApp(deps: WebDeps) {
     res.redirect(`/settings?g=${groupIdFrom(req)}&ok=` + encodeURIComponent('Settings saved.'));
   });
 
+  // Managing logins is the owner's alone — a shared admin should not be able to
+  // mint or revoke access. The owner is whoever logged in with ADMIN_PASSWORD.
+  const requireOwner = (req: Request, res: Response): boolean => {
+    if (tokenSubject(req.cookies?.[SESSION_COOKIE], secret) === 'owner') return true;
+    sendFor(
+      res,
+      req,
+      '<div class="card"><h1>Not allowed</h1><p class="sub">Only the owner (the server password) can manage console logins.</p></div>',
+      { title: 'Access', active: '/access' },
+    );
+    return false;
+  };
+
   app.get('/access', (req, res) => {
+    if (!requireOwner(req, res)) return;
     sendFor(res, req, accessPage(listConsoleUsers()), {
       title: 'Access',
       active: '/access',
@@ -616,6 +641,7 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.post('/access', (req, res) => {
+    if (!requireOwner(req, res)) return;
     const ok = addConsoleUser(String(req.body?.username ?? ''), String(req.body?.password ?? ''));
     res.redirect(
       '/access?' +
@@ -627,6 +653,7 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.post('/access/:id/password', (req, res) => {
+    if (!requireOwner(req, res)) return;
     const ok = setConsolePasswordById(Number(req.params.id), String(req.body?.password ?? ''));
     res.redirect(
       '/access?' +
@@ -637,6 +664,7 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.post('/access/:id/delete', (req, res) => {
+    if (!requireOwner(req, res)) return;
     deleteConsoleUser(Number(req.params.id));
     res.redirect('/access?ok=' + encodeURIComponent('Login removed.'));
   });

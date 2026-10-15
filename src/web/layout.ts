@@ -139,6 +139,8 @@ export interface LayoutOptions {
   /** Groups the console can act on, and which one is selected. */
   groups?: GroupChoice[];
   currentGroupId?: number;
+  /** Only the owner (env password) sees the Access link / can manage logins. */
+  isOwner?: boolean;
 }
 
 const NAV: [string, string][] = [
@@ -165,7 +167,7 @@ function withGroup(href: string, groupId?: number): string {
 
 export function layout(body: string, options: LayoutOptions): string {
   const g = options.currentGroupId;
-  const nav = NAV.map(
+  const nav = NAV.filter(([href]) => href !== '/access' || options.isOwner).map(
     ([href, label]) =>
       `<a href="${withGroup(href, g)}"${options.active === href ? ' class="active"' : ''}>${esc(label)}</a>`,
   ).join('');

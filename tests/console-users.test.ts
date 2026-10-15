@@ -49,3 +49,13 @@ describe('console logins', () => {
     expect(verifyConsoleUser('friend', 'newpass')).toBe(false);
   });
 });
+
+import { describe as d2, it as i2, expect as e2 } from 'vitest';
+import { layout } from '../src/web/layout.js';
+
+d2('the Access link is owner-only in the nav', () => {
+  i2('shows for the owner, hidden for a named admin', () => {
+    e2(layout('<p>x</p>', { title: 'T', isOwner: true })).toContain('>Access<');
+    e2(layout('<p>x</p>', { title: 'T', isOwner: false })).not.toContain('>Access<');
+  });
+});
