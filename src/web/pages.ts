@@ -57,7 +57,11 @@ export function loginPage(error?: string): string {
 /* Dashboard                                                           */
 /* ------------------------------------------------------------------ */
 
-export function dashboardPage(connected: boolean, groupId: number): string {
+export function dashboardPage(
+  connected: boolean,
+  groupId: number,
+  opts: { isOwner?: boolean; passwordWeakness?: string | null } = {},
+): string {
   const group = findGroupById(groupId);
   const upcoming = listUpcoming(groupId, 10);
   const claims = listPendingClaims(groupId);
@@ -68,9 +72,16 @@ export function dashboardPage(connected: boolean, groupId: number): string {
   if (admins.length === 0) setupIssues.push('No admin user recognised yet.');
   if (listPlaces(groupId).length === 0) setupIssues.push('No places added yet.');
 
+  const securityBanner =
+    opts.isOwner && opts.passwordWeakness
+      ? `<div class="flash err" style="margin:0 0 16px">⚠️ Your owner password ${esc(opts.passwordWeakness)}. ` +
+        `It is a full-admin login reachable over the internet — change ADMIN_PASSWORD on the server to a long, unique one.</div>`
+      : '';
+
   return `
   <h1>Dashboard</h1>
   <p class="sub">Overview of the bot and what is coming up.</p>
+  ${securityBanner}
 
   <div class="card">
     <h2 style="margin-top:0">Status</h2>

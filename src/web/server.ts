@@ -4,6 +4,7 @@ import { DateTime } from 'luxon';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import type { Server } from 'node:http';
 import { config } from '../config.js';
+import { adminPasswordWeakness } from '../util/password.js';
 import { many, run } from '../db/index.js';
 import { createBackup, listBackups, pruneBackups } from '../domain/backup.js';
 import {
@@ -110,6 +111,14 @@ export function createWebApp(deps: WebDeps) {
   // Generated per boot when unset: sessions simply do not survive a restart.
   const secret = config.web.sessionSecret || crypto.randomBytes(32).toString('hex');
   const password = config.web.adminPassword;
+
+  const pwWeakness = adminPasswordWeakness(password);
+  if (config.web.enabled && pwWeakness) {
+    logger.warn(
+      `SECURITY: the owner (ADMIN_PASSWORD) login ${pwWeakness}. It is a full-admin login and ` +
+        'reachable from the internet once the console is tunnelled — set a long, unique password.',
+    );
+  }
 
   // Light brute-force guard — the console is reachable from the internet once a
   // tunnel is set up, so cap failed logins per client for a spell.
@@ -255,7 +264,8 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.get('/', async (req, res) => {
-    sendFor(res, req, dashboardPage(deps.isConnected(), groupIdFrom(req)), {
+    const owner = tokenSubject(req.cookies?.[SESSION_COOKIE], secret) === 'owner';
+    sendFor(res, req, dashboardPage(deps.isConnected(), groupIdFrom(req), { isOwner: owner, passwordWeakness: owner ? pwWeakness : null }), {
       title: 'Dashboard',
       active: '/',
       flash: flashFrom(req),
