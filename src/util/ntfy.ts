@@ -9,12 +9,17 @@ export async function sendNtfy(
   title: string,
   message: string,
   priority: 'min' | 'low' | 'default' | 'high' | 'urgent' = 'default',
+  tags?: string,
 ): Promise<void> {
   if (!topic) return;
+  // HTTP headers are Latin1 only, so an emoji in the title throws. Strip it from
+  // the title (the message body is UTF-8 and keeps any emoji); ntfy renders the
+  // optional `Tags` (e.g. "warning") as an icon instead.
+  const safeTitle = title.replace(/[^\u0000-\u00ff]/g, '').trim() || 'JustPlayIt';
   try {
     await fetch(`https://ntfy.sh/${encodeURIComponent(topic)}`, {
       method: 'POST',
-      headers: { Title: title, Priority: priority },
+      headers: { Title: safeTitle, Priority: priority, ...(tags ? { Tags: tags } : {}) },
       body: message,
       signal: AbortSignal.timeout(8000),
     });

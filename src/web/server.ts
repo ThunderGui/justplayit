@@ -242,9 +242,10 @@ export function createWebApp(deps: WebDeps) {
       if (fails === LOGIN_MAX) {
         void sendNtfy(
           config.ntfyTopic,
-          'JustPlayIt: login blocked ⚠️',
-          `${LOGIN_MAX} failed console logins from ${ip} — locked out for 15 min. If this was not you, someone is probing the console.`,
+          'JustPlayIt: console login blocked',
+          `⚠️ ${LOGIN_MAX} failed logins from ${ip} — locked out for 15 min. If this was not you, someone is probing the console.`,
           'high',
+          'warning',
         );
       }
       return res.redirect('/login?err=' + encodeURIComponent('Wrong username or password.'));
