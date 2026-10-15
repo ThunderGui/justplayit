@@ -21,6 +21,13 @@ import { createPlace, deletePlace } from '../domain/places.js';
 import { findGroupById, listGroups as listAllGroups, updateGroup, SPORTS, type Sport } from '../domain/groups.js';
 import { getSettings, setSettings, invalidateSettings, type Lang, type PaymentConfirmationMode, type Settings } from '../domain/settings.js';
 import { anonymiseUser, findUserById, listAdmins, setAdmin, setPaymentHandle } from '../domain/users.js';
+import {
+  addConsoleUser,
+  deleteConsoleUser,
+  listConsoleUsers,
+  setConsolePasswordById,
+  verifyConsoleUser,
+} from '../domain/console-users.js';
 import { t } from '../i18n/index.js';
 import { buildIcs } from '../util/calendar.js';
 import { bookingTitle } from '../bot/render.js';
@@ -40,6 +47,7 @@ import {
   reportsPage,
   groupsPage,
   settingsPage,
+  accessPage,
 } from './pages.js';
 
 const SESSION_COOKIE = 'jpi_session';
@@ -61,9 +69,10 @@ function sign(payload: string, secret: string): string {
   return crypto.createHmac('sha256', secret).update(payload).digest('base64url');
 }
 
-function issueToken(secret: string): string {
+function issueToken(secret: string, subject = 'admin'): string {
   const expires = Date.now() + SESSION_TTL_MS;
-  const payload = `admin.${expires}`;
+  // base64url so a username containing a dot cannot break the dotted token.
+  const payload = `${Buffer.from(subject).toString('base64url')}.${expires}`;
   return `${payload}.${sign(payload, secret)}`;
 }
 
@@ -91,6 +100,28 @@ export function createWebApp(deps: WebDeps) {
   // Generated per boot when unset: sessions simply do not survive a restart.
   const secret = config.web.sessionSecret || crypto.randomBytes(32).toString('hex');
   const password = config.web.adminPassword;
+
+  // Light brute-force guard — the console is reachable from the internet once a
+  // tunnel is set up, so cap failed logins per client for a spell.
+  const loginFails = new Map<string, { count: number; until: number }>();
+  const LOGIN_MAX = 6;
+  const LOGIN_LOCK_MS = 15 * 60 * 1000;
+  const loginThrottled = (ip: string): boolean => {
+    const e = loginFails.get(ip);
+    return e != null && e.count >= LOGIN_MAX && Date.now() < e.until;
+  };
+  const noteLoginFail = (ip: string): void => {
+    const e = loginFails.get(ip) ?? { count: 0, until: 0 };
+    e.count += 1;
+    e.until = Date.now() + LOGIN_LOCK_MS;
+    loginFails.set(ip, e);
+  };
+  const clearLoginFails = (ip: string): void => void loginFails.delete(ip);
+  const samePassword = (a: string, b: string): boolean => {
+    const ha = crypto.createHash('sha256').update(a).digest();
+    const hb = crypto.createHash('sha256').update(b).digest();
+    return crypto.timingSafeEqual(ha, hb);
+  };
 
   app.disable('x-powered-by');
   app.use(express.urlencoded({ extended: false, limit: '256kb' }));
@@ -168,25 +199,33 @@ export function createWebApp(deps: WebDeps) {
   });
 
   app.post('/login', (req, res) => {
-    if (!password) {
-      return res.redirect('/login?err=' + encodeURIComponent('ADMIN_PASSWORD is not set on the server.'));
+    const ip = req.ip ?? 'unknown';
+    if (loginThrottled(ip)) {
+      return res.redirect('/login?err=' + encodeURIComponent('Too many attempts — wait a few minutes.'));
     }
 
+    const username = String(req.body?.username ?? '').trim();
     const supplied = String(req.body?.password ?? '');
-    const a = crypto.createHash('sha256').update(supplied).digest();
-    const b = crypto.createHash('sha256').update(password).digest();
 
-    if (!crypto.timingSafeEqual(a, b)) {
-      logger.warn('failed admin login attempt');
-      return res.redirect('/login?err=' + encodeURIComponent('Wrong password.'));
+    let authedAs: string | null = null;
+    if (username && verifyConsoleUser(username, supplied)) {
+      authedAs = username;
+    } else if (password && supplied.length > 0 && samePassword(supplied, password)) {
+      authedAs = username || 'owner'; // env ADMIN_PASSWORD stays valid as the owner login
     }
 
-    res.cookie(SESSION_COOKIE, issueToken(secret), {
+    if (!authedAs) {
+      noteLoginFail(ip);
+      logger.warn({ ip }, 'failed console login');
+      return res.redirect('/login?err=' + encodeURIComponent('Wrong username or password.'));
+    }
+    clearLoginFails(ip);
+
+    res.cookie(SESSION_COOKIE, issueToken(secret, authedAs), {
       httpOnly: true,
       sameSite: 'lax',
       maxAge: SESSION_TTL_MS,
-      // The Pi deployment is usually plain HTTP on the LAN, so this cannot be
-      // unconditional without locking the admin out of their own console.
+      // Plain HTTP on the LAN by default; set only behind a TLS-terminating proxy.
       secure: config.isProduction && process.env.TRUST_PROXY === '1',
     });
     res.redirect('/');
@@ -566,6 +605,40 @@ export function createWebApp(deps: WebDeps) {
     setSettings(patch, groupIdFrom(req));
     logger.info('settings updated from web console');
     res.redirect(`/settings?g=${groupIdFrom(req)}&ok=` + encodeURIComponent('Settings saved.'));
+  });
+
+  app.get('/access', (req, res) => {
+    sendFor(res, req, accessPage(listConsoleUsers()), {
+      title: 'Access',
+      active: '/access',
+      flash: flashFrom(req),
+    });
+  });
+
+  app.post('/access', (req, res) => {
+    const ok = addConsoleUser(String(req.body?.username ?? ''), String(req.body?.password ?? ''));
+    res.redirect(
+      '/access?' +
+        (ok
+          ? 'ok=' + encodeURIComponent('Login created.')
+          : 'err=' +
+            encodeURIComponent('Could not create it — username must be 3–32 chars, password 6+, and not already taken.')),
+    );
+  });
+
+  app.post('/access/:id/password', (req, res) => {
+    const ok = setConsolePasswordById(Number(req.params.id), String(req.body?.password ?? ''));
+    res.redirect(
+      '/access?' +
+        (ok
+          ? 'ok=' + encodeURIComponent('Password updated.')
+          : 'err=' + encodeURIComponent('Password must be at least 6 characters.')),
+    );
+  });
+
+  app.post('/access/:id/delete', (req, res) => {
+    deleteConsoleUser(Number(req.params.id));
+    res.redirect('/access?ok=' + encodeURIComponent('Login removed.'));
   });
 
   app.use((_req, res) => {

@@ -1,6 +1,7 @@
 import { DateTime } from 'luxon';
 import type { BackupFile } from '../domain/backup.js';
 import { findGroupById, listGroups, listMembers, SPORTS, type Group } from '../domain/groups.js';
+import type { ConsoleUser } from '../domain/console-users.js';
 import {
   getRoster,
   listAllBookings,
@@ -41,8 +42,11 @@ export function loginPage(error?: string): string {
       <p class="sub">Admin console</p>
       ${error ? `<div class="flash err">${esc(error)}</div>` : ''}
       <form method="post" action="/login">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" autofocus autocomplete="username"
+               placeholder="your login (owner can leave blank)">
         <label for="password">Password</label>
-        <input type="password" id="password" name="password" autofocus autocomplete="current-password" required>
+        <input type="password" id="password" name="password" autocomplete="current-password" required>
         <div class="actions"><button type="submit">Sign in</button></div>
       </form>
     </div>
@@ -831,4 +835,54 @@ export function settingsPage(groupId: number): string {
     Defaults: cancellation ${DEFAULT_SETTINGS.defaultCancelLimitHours}h,
     payment deadline ${DEFAULT_SETTINGS.paymentDeadlineDays} days.
   </p>`;
+}
+
+export function accessPage(users: ConsoleUser[]): string {
+  return `
+  <h1>Access</h1>
+  <p class="sub">
+    Logins for this console. Everyone here is a full admin over every group. The
+    server's own ADMIN_PASSWORD still works as the owner login.
+  </p>
+
+  <div class="card">
+    <div class="table-wrap"><table>
+      <tr><th>Username</th><th>Added</th><th></th></tr>
+      <tr><td>owner</td><td class="muted">server password</td><td class="muted">set via ADMIN_PASSWORD</td></tr>
+      ${users
+        .map(
+          (u) => `<tr>
+        <td>${esc(u.username)}</td>
+        <td class="muted">${esc(u.created_at.slice(0, 10))}</td>
+        <td>
+          <form method="post" action="/access/${u.id}/password" class="inline" style="display:flex;gap:6px">
+            <input type="password" name="password" placeholder="new password" minlength="6" style="min-width:150px">
+            <button class="secondary" type="submit">Set password</button>
+          </form>
+          <form method="post" action="/access/${u.id}/delete" class="inline"
+                onsubmit="return confirm('Remove login ${esc(u.username)}?')">
+            <button class="danger" type="submit">Remove</button>
+          </form>
+        </td></tr>`,
+        )
+        .join('')}
+    </table></div>
+  </div>
+
+  <h2>Add a login</h2>
+  <div class="card">
+    <form method="post" action="/access">
+      <div class="row">
+        <div>
+          <label for="u_name">Username <span class="hint">3–32 letters, digits, . _ -</span></label>
+          <input type="text" id="u_name" name="username" required>
+        </div>
+        <div>
+          <label for="u_pw">Password <span class="hint">at least 6 characters</span></label>
+          <input type="password" id="u_pw" name="password" minlength="6" required>
+        </div>
+      </div>
+      <div class="actions"><button type="submit">Create login</button></div>
+    </form>
+  </div>`;
 }

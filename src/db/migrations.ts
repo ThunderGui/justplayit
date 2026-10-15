@@ -364,4 +364,20 @@ export const MIGRATIONS: Migration[] = [
     );
     `,
   },
+
+  {
+    id: 6,
+    name: 'console_users',
+    up: `
+    /* Named logins for the web console. Each is a full admin (the env
+       ADMIN_PASSWORD stays valid as the owner's break-glass login). Added so
+       the console can be shared without handing out one shared password. */
+    CREATE TABLE console_users (
+      id            INTEGER PRIMARY KEY,
+      username      TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      password_hash TEXT NOT NULL,
+      created_at    TEXT NOT NULL
+    );
+    `,
+  },
 ];

@@ -150,6 +150,7 @@ const NAV: [string, string][] = [
   ['/reports', 'Reports'],
   ['/groups', 'Groups'],
   ['/settings', 'Settings'],
+  ['/access', 'Access'],
 ];
 
 /**
