@@ -2,8 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { config } from '../config.js';
 import { one, run } from '../db/index.js';
-import { handleCommand, type OutgoingMessage } from '../bot/commands.js';
+import { autoAddFromShare, handleCommand, type OutgoingMessage } from '../bot/commands.js';
 import { parseMessage, field, type ParsedCommand } from '../bot/parser.js';
+import { parseSharedMatch } from '../bot/share.js';
 import { providerFor } from '../providers/index.js';
 import { DateTime } from 'luxon';
 import { getSettings } from '../domain/settings.js';
@@ -98,7 +99,28 @@ export function createDispatcher(client: WhatsAppClient) {
       prefixOptional: !message.isGroup,
     });
 
-    if (parsed.kind === 'not_a_command') return;
+    if (parsed.kind === 'not_a_command') {
+      // Not a command — but it may be a match shared straight from the
+      // Playtomic/Padelcity app. If so, add it to the list, owned by the sharer.
+      if (message.isGroup) {
+        const share = parseSharedMatch(message.text, settings.timezone, DateTime.now());
+        if (share) {
+          void client.markRead(message);
+          try {
+            const out = await autoAddFromShare(share, {
+              groupId: group.id,
+              user,
+              dict,
+              settings,
+            });
+            for (const o of out) await send(client, o, message, groupJid);
+          } catch (err) {
+            logger.error({ err }, 'auto-add from shared match failed');
+          }
+        }
+      }
+      return;
+    }
 
     // Read the command we are about to answer — a person reads before replying.
     void client.markRead(message);

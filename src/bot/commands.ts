@@ -8,6 +8,7 @@ import {
   affectedUserIds,
   findBookingByCode,
   findBookingById,
+  hasOpenExternalMatch,
   updateBooking,
   getRoster,
   isExternal,
@@ -38,6 +39,7 @@ import { formatDateTime, nowIso, parseDate, parseDateTime, parseDuration, parseT
 import { formatMoney, parseMoneyToCents } from '../util/money.js';
 import { balanceCard, bookingCard, bookingList, sportEmoji } from './render.js';
 import { providerFor } from '../providers/index.js';
+import { matchKey, type SharedMatch } from './share.js';
 import { getDmGroup, setDmGroup, clearDmGroup, groupsForUser } from '../domain/groups.js';
 import { field, type ParsedCommand } from './parser.js';
 import { helpText } from './help.js';
@@ -1075,6 +1077,82 @@ function handlePayment(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage
 
   setPaymentHandle(ctx.user.id, value);
   return [reply(dict.payment.handleSet(value))];
+}
+
+/* ------------------------------------------------------------------ */
+/* Auto-add a match shared straight from the Playtomic/Padelcity app    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Turns a match shared into the group into a booking owned by the sharer (so
+ * they can cancel it), with no command typed. Playtomic shares are enriched by
+ * the real provider fetch; Padelcity shares use only what the message itself
+ * carries. Stays silent on anything it cannot or should not add (a re-share, a
+ * past match, a clash) — this fires on ordinary messages, so it must not nag.
+ */
+export async function autoAddFromShare(
+  share: SharedMatch,
+  ctx: Pick<CommandContext, 'groupId' | 'user' | 'dict' | 'settings'>,
+): Promise<OutgoingMessage[]> {
+  if (hasOpenExternalMatch(ctx.groupId, matchKey(share.url))) return []; // already on the list
+
+  let startsAtIso = share.startsAtIso;
+  let venue = share.venue;
+  let court = share.court;
+  let players = share.players;
+  let slotsTotal = share.slotsTotal;
+  let slotsFree = share.slotsFree;
+  let status: string | null = null;
+  const durationMin = share.durationMin ?? undefined;
+
+  // Playtomic: the real match is authoritative — fall back to the shared text
+  // only if the fetch cannot be made (no credentials, network).
+  if (share.platform === 'Playtomic') {
+    const provider = providerFor(share.url);
+    if (provider) {
+      const res = await provider.fetch(share.url);
+      if (res.ok) {
+        const m = res.match;
+        startsAtIso = m.startsAtIso ?? startsAtIso;
+        venue = m.venueName ?? venue;
+        court = m.court ?? court;
+        players = m.players.length > 0 ? m.players : players;
+        slotsTotal = m.slotsTotal ?? slotsTotal;
+        slotsFree = m.slotsFree ?? slotsFree;
+        status = m.status;
+      }
+    }
+  }
+
+  if (!startsAtIso) return []; // nothing to place on the calendar
+
+  const result = createExternalBooking({
+    groupId: ctx.groupId,
+    creator: ctx.user,
+    provider: share.platform,
+    url: share.url,
+    startsAtIso,
+    durationMin,
+    customPlace: venue,
+    court: court ?? null,
+  });
+  if (!result.ok) return []; // past, clash, bad link — stay quiet for a passive add
+
+  updateBooking(result.booking.id, {
+    external_status: status,
+    external_players: JSON.stringify(players),
+    external_slots_total: slotsTotal,
+    external_slots_free: slotsFree,
+    external_synced_at: nowIso(),
+    external_sync_error: null,
+  });
+  const fresh = findBookingById(result.booking.id) ?? result.booking;
+
+  return [
+    toGroup(
+      `${sportEmoji(fresh)} ${ctx.dict.external.created(fresh.code, share.platform)}\n\n${bookingCard(fresh, ctx.dict, ctx.settings)}`,
+    ),
+  ];
 }
 
 /* ------------------------------------------------------------------ */

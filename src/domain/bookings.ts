@@ -770,3 +770,19 @@ export function updateBooking(id: number, patch: Partial<Booking>): void {
   const values = fields.map((k) => patch[k] as string | number | null);
   run(`UPDATE bookings SET ${setClause} WHERE id = ?`, ...values, id);
 }
+
+/** True if the group already has an OPEN external booking whose link contains
+ *  this id fragment — used to ignore a re-shared match instead of adding it
+ *  twice. */
+export function hasOpenExternalMatch(groupId: number, idFragment: string): boolean {
+  if (!idFragment) return false;
+  return (
+    one(
+      `SELECT 1 AS x FROM bookings
+        WHERE group_id = ? AND kind = 'EXTERNAL' AND status = 'OPEN'
+          AND external_url LIKE '%' || ? || '%' LIMIT 1`,
+      groupId,
+      idFragment,
+    ) != null
+  );
+}

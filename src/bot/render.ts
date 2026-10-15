@@ -44,6 +44,13 @@ const SPORT_EMOJI: Record<Sport, string> = {
   other: '🎾',
 };
 
+/** Court label that avoids doubling up when the value already names the court
+ *  (e.g. Padelcity's "Padel Court 3" should not become "Court Padel Court 3"). */
+function courtLabel(court: string, courtWord: string): string {
+  const v = court.trim();
+  return /\b(court|cancha|pista|platz|campo|quadra|kort|baan)\b/i.test(v) ? v : `${courtWord} ${v}`;
+}
+
 /** The group's sport as a single glyph, to head each card and list line. */
 export function sportEmoji(booking: Booking): string {
   const sport = findGroupById(booking.group_id)?.sport;
@@ -76,7 +83,7 @@ export function bookingCard(booking: Booking, dict: Dict, settings = getSettings
 
   if (isExternal(booking)) {
     const provider = booking.external_provider ?? 'external';
-    const court = booking.court ? ` · ${L.court} ${booking.court.replace(/^court\s+/i, '')}` : '';
+    const court = booking.court ? ` · ${courtLabel(booking.court, L.court)}` : '';
     lines.push(`${E} *${booking.code}* · ${placeLabel(booking)}${court} · _${provider}_`);
     lines.push(`🗓️ ${when}`);
 
@@ -102,7 +109,7 @@ export function bookingCard(booking: Booking, dict: Dict, settings = getSettings
   const confirmed = roster.confirmed;
   const free = booking.max_players - confirmed.length;
 
-  const court = booking.court ? ` · ${L.court} ${booking.court.replace(/^court\s+/i, '')}` : '';
+  const court = booking.court ? ` · ${courtLabel(booking.court, L.court)}` : '';
   lines.push(`${E} *${booking.code}* · ${placeLabel(booking)}${court}`);
   lines.push(`🗓️ ${when}  🔗 ${L.addToCalendar}: ${calendarLink(booking)}`);
 
@@ -206,7 +213,7 @@ export function bookingList(bookings: Booking[], dict: Dict, settings = getSetti
 function venueLines(booking: Booking, dict: Dict): string[] {
   const parts: string[] = [];
 
-  if (booking.court) parts.push(`${dict.label.court} ${booking.court.replace(/^court\s+/i, '')}`);
+  if (booking.court) parts.push(courtLabel(booking.court, dict.label.court));
 
   const address = placeAddress(booking);
   if (address && address !== placeLabel(booking)) parts.push(address);
