@@ -64,6 +64,9 @@ const schema = z.object({
    */
   WA_HUMANIZE: z.coerce.number().default(1),
 
+  /** ntfy.sh topic for operational alerts (e.g. a brute-forced login). */
+  NTFY_TOPIC: z.string().default(''),
+
   /**
    * Link by pairing code instead of QR. Set to the bot's own number in
    * international format, digits only (e.g. 4915112345678).
@@ -106,6 +109,7 @@ export const config = {
   whatsappEnabled: env.WHATSAPP_ENABLED === 1,
   /** Pace + typing + read receipts, to look less like a bot. */
   humanizeSending: env.WA_HUMANIZE === 1,
+  ntfyTopic: env.NTFY_TOPIC,
   /** Digits only; empty means link by QR code instead. */
   whatsappPairingNumber: env.WHATSAPP_PAIRING_NUMBER.replace(/\D/g, ''),
   playtomic:

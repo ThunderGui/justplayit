@@ -5,6 +5,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import type { Server } from 'node:http';
 import { config } from '../config.js';
 import { adminPasswordWeakness } from '../util/password.js';
+import { sendNtfy } from '../util/ntfy.js';
 import { many, run } from '../db/index.js';
 import { createBackup, listBackups, pruneBackups } from '../domain/backup.js';
 import {
@@ -129,11 +130,12 @@ export function createWebApp(deps: WebDeps) {
     const e = loginFails.get(ip);
     return e != null && e.count >= LOGIN_MAX && Date.now() < e.until;
   };
-  const noteLoginFail = (ip: string): void => {
+  const noteLoginFail = (ip: string): number => {
     const e = loginFails.get(ip) ?? { count: 0, until: 0 };
     e.count += 1;
     e.until = Date.now() + LOGIN_LOCK_MS;
     loginFails.set(ip, e);
+    return e.count;
   };
   const clearLoginFails = (ip: string): void => void loginFails.delete(ip);
   const samePassword = (a: string, b: string): boolean => {
@@ -235,8 +237,16 @@ export function createWebApp(deps: WebDeps) {
     }
 
     if (!authedAs) {
-      noteLoginFail(ip);
-      logger.warn({ ip }, 'failed console login');
+      const fails = noteLoginFail(ip);
+      logger.warn({ ip, fails }, 'failed console login');
+      if (fails === LOGIN_MAX) {
+        void sendNtfy(
+          config.ntfyTopic,
+          'JustPlayIt: login blocked ⚠️',
+          `${LOGIN_MAX} failed console logins from ${ip} — locked out for 15 min. If this was not you, someone is probing the console.`,
+          'high',
+        );
+      }
       return res.redirect('/login?err=' + encodeURIComponent('Wrong username or password.'));
     }
     clearLoginFails(ip);
