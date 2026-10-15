@@ -10,6 +10,17 @@ services:
     # instead of coming back on the next reboot.
     restart: unless-stopped
 
+    # Container hardening (defence in depth now the console is internet-facing):
+    # run as the non-root 'node' user (uid 1000, matching the data-mount owner),
+    # drop every Linux capability (the bot needs none — it just binds a high
+    # port), and forbid gaining new privileges. So even code running in the
+    # container has almost nothing to work with, which blunts a container escape.
+    user: node
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
     # Docker's embedded resolver (127.0.0.11) forwards to the host's nameserver,
     # and that forwarder has gotten stuck before — leaving the container unable
     # to resolve web.whatsapp.com (EAI_AGAIN) and stuck in a reconnect loop for
