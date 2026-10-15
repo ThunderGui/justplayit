@@ -92,10 +92,14 @@ function monthFrom(dateLine: string): number | null {
  * no usable time or day.
  */
 function parseDate(dateLine: string, tz: string, now: DateTime): DateTime | null {
-  const time = dateLine.match(/(\d{1,2}):(\d{2})/);
+  // Handle both 24h ("16:00") and 12h ("7:30 pm") — the English app uses the latter.
+  const time = dateLine.match(/(\d{1,2}):(\d{2})\s*(a\.?m\.?|p\.?m\.?)?/i);
   if (!time) return null;
-  const hour = Number(time[1]);
+  let hour = Number(time[1]);
   const minute = Number(time[2]);
+  const meridiem = time[3]?.toLowerCase();
+  if (meridiem?.startsWith('p') && hour < 12) hour += 12;
+  if (meridiem?.startsWith('a') && hour === 12) hour = 0;
   if (hour > 23 || minute > 59) return null;
 
   // Day-of-month: the first 1–2 digit number once times and parentheticals (the
