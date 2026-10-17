@@ -1105,22 +1105,21 @@ export async function autoAddFromShare(
   let status: string | null = null;
   const durationMin = share.durationMin ?? undefined;
 
-  // Playtomic: the real match is authoritative — fall back to the shared text
-  // only if the fetch cannot be made (no credentials, network).
-  if (share.platform === 'Playtomic') {
-    const provider = providerFor(share.url);
-    if (provider) {
-      const res = await provider.fetch(share.url);
-      if (res.ok) {
-        const m = res.match;
-        startsAtIso = m.startsAtIso ?? startsAtIso;
-        venue = m.venueName ?? venue;
-        court = m.court ?? court;
-        players = m.players.length > 0 ? m.players : players;
-        slotsTotal = m.slotsTotal ?? slotsTotal;
-        slotsFree = m.slotsFree ?? slotsFree;
-        status = m.status;
-      }
+  // When a provider can read the match live (Playtomic, and Padelcity now that
+  // we have an adapter), that is authoritative — fall back to the shared text
+  // only if the fetch cannot be made (no credentials, network, a dead link).
+  const provider = providerFor(share.url);
+  if (provider) {
+    const res = await provider.fetch(share.url);
+    if (res.ok) {
+      const m = res.match;
+      startsAtIso = m.startsAtIso ?? startsAtIso;
+      venue = m.venueName ?? venue;
+      court = m.court ?? court;
+      players = m.players.length > 0 ? m.players : players;
+      slotsTotal = m.slotsTotal ?? slotsTotal;
+      slotsFree = m.slotsFree ?? slotsFree;
+      status = m.status;
     }
   }
 

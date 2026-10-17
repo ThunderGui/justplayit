@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { PlaytomicProvider } from './playtomic.js';
+import { PadelcityProvider } from './padelcity.js';
 import type { Provider } from './types.js';
 
 export type { ExternalMatch, FetchResult, Provider } from './types.js';
@@ -14,7 +15,7 @@ let registry: Provider[] | null = null;
 
 export function providers(): Provider[] {
   if (!registry) {
-    registry = [new PlaytomicProvider(config.playtomic)];
+    registry = [new PlaytomicProvider(config.playtomic), new PadelcityProvider(config.padelcity)];
   }
   return registry;
 }

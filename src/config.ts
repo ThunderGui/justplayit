@@ -83,6 +83,10 @@ const schema = z.object({
    */
   PLAYTOMIC_EMAIL: z.string().default(''),
   PLAYTOMIC_PASSWORD: z.string().default(''),
+
+  PADELCITY_EMAIL: z.string().default(''),
+  PADELCITY_PASSWORD: z.string().default(''),
+  PADELCITY_CLIENT_SECRET: z.string().default(''),
 });
 
 const env = schema.parse(process.env);
@@ -115,6 +119,14 @@ export const config = {
   playtomic:
     env.PLAYTOMIC_EMAIL.length > 0
       ? { email: env.PLAYTOMIC_EMAIL, password: env.PLAYTOMIC_PASSWORD }
+      : null,
+  padelcity:
+    env.PADELCITY_EMAIL.length > 0 && env.PADELCITY_CLIENT_SECRET.length > 0
+      ? {
+          email: env.PADELCITY_EMAIL,
+          password: env.PADELCITY_PASSWORD,
+          clientSecret: env.PADELCITY_CLIENT_SECRET,
+        }
       : null,
 } as const;
 
