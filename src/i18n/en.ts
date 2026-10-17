@@ -24,6 +24,8 @@ export const en = {
   /* ---- bookings held on an external platform (Playtomic etc.) ---- */
   external: {
     created: (code: string, provider: string) => `${provider} booking *${code}* added.`,
+    cancelled: (code: string, provider: string) =>
+      `❌ The ${provider} match *${code}* was cancelled on ${provider} — removing it from the list.`,
     /** Shown on the card so nobody waits for the bot to organise this one. */
     managedNote: (provider: string) =>
       `Sign up, pay and cancel directly on ${provider} using the link above.`,

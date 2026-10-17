@@ -23,6 +23,8 @@ export const pt: Dict = {
   },
 
   external: {
+    cancelled: (code: string, provider: string) =>
+      `❌ O jogo *${code}* no ${provider} foi cancelado no ${provider} — a remover da lista.`,
     created: (code: string, provider: string) => `Reserva ${provider} *${code}* adicionada.`,
     managedNote: (provider: string) =>
       `A inscrição, o pagamento e o cancelamento são feitos diretamente no ${provider}, pelo link acima.`,

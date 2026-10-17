@@ -214,6 +214,23 @@ export async function runExternalSync(notifier: Notifier): Promise<number> {
   for (const booking of due) {
     const firstSync = booking.external_synced_at == null;
     const result = await syncExternalBooking(booking);
+
+    // The platform cancelled it (explicit status, or gone for two syncs): the
+    // booking is now CANCELLED — tell the group once and move on.
+    if (result.cancelled) {
+      const settings = getSettings(booking.group_id);
+      try {
+        await notifier.sendToGroup(
+          booking.group_id,
+          t(settings.language).external.cancelled(booking.code, booking.external_provider ?? 'external'),
+        );
+        logger.info({ code: booking.code }, 'announced external cancellation');
+      } catch (err) {
+        logger.error({ err, code: booking.code }, 'could not announce external cancellation');
+      }
+      continue;
+    }
+
     if (!result.ok) continue;
     synced++;
 

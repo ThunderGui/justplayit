@@ -204,7 +204,7 @@ function normalise(raw: PadelcityMatch, id: string, url: string): ExternalMatch 
     endsAtIso: endsAt,
     timezone: null,
     sport: raw.court?.sportType ?? raw.sportType ?? null,
-    status: raw.phase ?? raw.kind ?? null,
+    status: raw.cancelledAt ? 'CANCELLED' : raw.terminatedAt ? 'TERMINATED' : (raw.phase ?? raw.kind ?? null),
     players,
     slotsTotal: slotsTotal > 0 ? slotsTotal : null,
     slotsFree: slotsTotal > 0 ? slotsFree : null,
@@ -221,6 +221,8 @@ interface PadelcityFee {
 interface PadelcityMatch {
   kind?: string;
   phase?: string;
+  cancelledAt?: string | null;
+  terminatedAt?: string | null;
   sportType?: string;
   matchPeriod?: { startsAt?: string; endsAt?: string; durationInSeconds?: number };
   court?: { name?: string; locationType?: string; courtType?: string; sportType?: string };

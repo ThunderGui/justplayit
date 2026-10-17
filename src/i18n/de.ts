@@ -23,6 +23,8 @@ export const de: Dict = {
   },
 
   external: {
+    cancelled: (code: string, provider: string) =>
+      `❌ Das ${provider}-Match *${code}* wurde auf ${provider} abgesagt — ich nehme es von der Liste.`,
     created: (code: string, provider: string) => `${provider}-Buchung *${code}* hinzugefügt.`,
     managedNote: (provider: string) =>
       `Anmeldung, Zahlung und Absage laufen direkt über ${provider} — nutze den Link oben.`,
