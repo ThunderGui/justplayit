@@ -18,15 +18,11 @@ const AUTH_URL =
 const API = 'https://api.prod.cluster.padelcity.de';
 const CLIENT_ID = 'padel-city-internal';
 
-// The app identifies itself with these; the API's force-update check can reject
-// stale versions, so keep them current with a real build.
-const APP_HEADERS: Record<string, string> = {
-  Accept: 'application/json',
-  'x-app-version': '1.43.0',
-  'x-app-build': '2390',
-  'x-app-os': 'android',
-  'User-Agent': 'JustPlayItBot/1.0',
-};
+// The app identifies itself with these. If the API's force-update check ever
+// starts rejecting the version, bump PADELCITY_APP_VERSION / PADELCITY_APP_BUILD
+// in the env — no code change needed. Defaults are the last known-good build.
+const DEFAULT_APP_VERSION = '1.43.0';
+const DEFAULT_APP_BUILD = '2390';
 
 const UUID = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 // Shared links look like padelcity.go.link/playtab/play/match/<uuid>; the API
@@ -39,6 +35,8 @@ export interface PadelcityCredentials {
   email: string;
   password: string;
   clientSecret: string;
+  appVersion?: string;
+  appBuild?: string;
 }
 
 interface TokenState {
@@ -60,6 +58,16 @@ export class PadelcityProvider implements Provider {
 
   get configured(): boolean {
     return this.creds != null && this.creds.email.length > 0 && this.creds.clientSecret.length > 0;
+  }
+
+  private get appHeaders(): Record<string, string> {
+    return {
+      Accept: 'application/json',
+      'x-app-version': this.creds?.appVersion || DEFAULT_APP_VERSION,
+      'x-app-build': this.creds?.appBuild || DEFAULT_APP_BUILD,
+      'x-app-os': 'android',
+      'User-Agent': 'JustPlayItBot/1.0',
+    };
   }
 
   matches(url: string): boolean {
@@ -93,7 +101,7 @@ export class PadelcityProvider implements Provider {
 
   private async call(path: string, accessToken: string): Promise<Response> {
     return this.fetchImpl(`${API}${path}`, {
-      headers: { Authorization: `Bearer ${accessToken}`, ...APP_HEADERS },
+      headers: { Authorization: `Bearer ${accessToken}`, ...this.appHeaders },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   }
@@ -132,7 +140,7 @@ export class PadelcityProvider implements Provider {
       });
       const res = await this.fetchImpl(AUTH_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...APP_HEADERS },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', ...this.appHeaders },
         body: body.toString(),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });

@@ -87,6 +87,8 @@ const schema = z.object({
   PADELCITY_EMAIL: z.string().default(''),
   PADELCITY_PASSWORD: z.string().default(''),
   PADELCITY_CLIENT_SECRET: z.string().default(''),
+  PADELCITY_APP_VERSION: z.string().default(''),
+  PADELCITY_APP_BUILD: z.string().default(''),
 });
 
 const env = schema.parse(process.env);
@@ -126,6 +128,8 @@ export const config = {
           email: env.PADELCITY_EMAIL,
           password: env.PADELCITY_PASSWORD,
           clientSecret: env.PADELCITY_CLIENT_SECRET,
+          appVersion: env.PADELCITY_APP_VERSION || undefined,
+          appBuild: env.PADELCITY_APP_BUILD || undefined,
         }
       : null,
 } as const;
