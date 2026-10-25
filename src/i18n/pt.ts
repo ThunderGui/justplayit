@@ -20,6 +20,8 @@ export const pt: Dict = {
     nobodyYet: 'ainda ninguém',
     link: 'Link',
     managedOn: 'Gerido em',
+    group: 'Grupo',
+    sport: 'Desporto',
   },
 
   external: {
@@ -87,6 +89,11 @@ export const pt: Dict = {
     listEmpty: (prefix: string) =>
       `Não há reservas marcadas. Cria uma com ${prefix}book.`,
     listHeader: 'Próximos jogos',
+    listAllHeader: 'Todos os teus próximos jogos',
+    listAllEmpty: (prefix: string) =>
+      `Não tens jogos marcados em nenhum dos teus grupos. Cria um com ${prefix}book.`,
+    listAllSentToDm:
+      'Enviei-te a lista de todos os próximos jogos de todos os grupos no chat privado, para não encher o grupo.',
     missingFields: (fields: string) => `Ainda me falta: ${fields}`,
     badDate: 'Não consegui ler essa data. Tenta algo como 03/09, amanhã ou sexta.',
     badTime: 'Não consegui ler essa hora. Tenta algo como 19:00.',

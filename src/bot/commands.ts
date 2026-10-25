@@ -37,7 +37,7 @@ import {
 import type { Dict } from '../i18n/index.js';
 import { formatDateTime, nowIso, parseDate, parseDateTime, parseDuration, parseTime, toUtcIso } from '../util/datetime.js';
 import { formatMoney, parseMoneyToCents } from '../util/money.js';
-import { balanceCard, bookingCard, bookingList, sportEmoji } from './render.js';
+import { balanceCard, bookingCard, bookingList, sportEmoji, allGroupsList } from './render.js';
 import { providerFor } from '../providers/index.js';
 import { matchKey, type SharedMatch } from './share.js';
 import { getDmGroup, setDmGroup, clearDmGroup, groupsForUser } from '../domain/groups.js';
@@ -115,6 +115,8 @@ export function handleCommand(cmd: ParsedCommand, ctx: CommandContext): Outgoing
     }
     case 'list':
       return handleList(ctx);
+    case 'listall':
+      return handleListAll(ctx);
     case 'show':
       return handleShow(cmd, ctx);
     case 'book':
@@ -168,6 +170,23 @@ export function handleCommand(cmd: ParsedCommand, ctx: CommandContext): Outgoing
 
 function handleList(ctx: CommandContext): OutgoingMessage[] {
   return [reply(bookingList(listUpcoming(ctx.groupId), ctx.dict, ctx.settings))];
+}
+
+/**
+ * Upcoming games across every group the person is in, tagged by group and
+ * sport, ordered by time. Always delivered to their private chat so it never
+ * spams a group with other groups' games; when triggered inside a group, a
+ * short note is left there pointing to the DM.
+ */
+function handleListAll(ctx: CommandContext): OutgoingMessage[] {
+  const entries = groupsForUser(ctx.user.id).flatMap((group) => {
+    const settings = getSettings(group.id);
+    return listUpcoming(group.id).map((booking) => ({ booking, group, settings }));
+  });
+
+  const messages: OutgoingMessage[] = [toDm(ctx.user.id, allGroupsList(entries, ctx.dict))];
+  if (ctx.isGroup) messages.push(reply(ctx.dict.booking.listAllSentToDm));
+  return messages;
 }
 
 function handleShow(cmd: ParsedCommand, ctx: CommandContext): OutgoingMessage[] {

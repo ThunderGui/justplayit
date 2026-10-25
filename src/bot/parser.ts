@@ -6,6 +6,7 @@
 export type CommandName =
   | 'help'
   | 'list'
+  | 'listall'
   | 'show'
   | 'book'
   | 'external'
@@ -37,6 +38,8 @@ const ALIASES: Record<string, CommandName> = {
   help: 'help', h: 'help', commands: 'help', ajuda: 'help', hilfe: 'help',
 
   list: 'list', calendar: 'list', bookings: 'list', games: 'list', ls: 'list',
+
+  listall: 'listall', 'list all': 'listall', 'list-all': 'listall', 'all games': 'listall', lsa: 'listall',
 
   show: 'show', info: 'show', details: 'show',
 

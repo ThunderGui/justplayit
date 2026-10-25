@@ -12,6 +12,7 @@ export function helpText(dict: Dict, settings: Settings, isAdmin: boolean): stri
     '*Just Play It*',
     '',
     `${p}list — all upcoming games`,
+    `${p}list all — your upcoming games across every group (sent privately)`,
     `${p}show <id> — full details of one game`,
     `${p}join <id> — take a spot (or join the waiting list if full)`,
     `${p}leave <id> — give up your spot`,

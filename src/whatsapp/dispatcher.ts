@@ -75,9 +75,13 @@ export function createDispatcher(client: WhatsAppClient) {
           prefix: getSettings(group.id).commandPrefix,
           prefixOptional: true,
         });
-        const isUse = peek.kind === 'command' && peek.command.name === 'use';
+        // Commands that span (or don't need) a specific group must get through
+        // without the "which group?" prompt, even for a multi-group member.
+        const groupAgnostic =
+          peek.kind === 'command' &&
+          (peek.command.name === 'use' || peek.command.name === 'listall');
 
-        if (!explicit && !stored && !isUse) {
+        if (!explicit && !stored && !groupAgnostic) {
           await client
             .sendText(
               message.chatId,

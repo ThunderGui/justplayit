@@ -20,6 +20,8 @@ export const de: Dict = {
     nobodyYet: 'noch niemand',
     link: 'Link',
     managedOn: 'Verwaltet über',
+    group: 'Gruppe',
+    sport: 'Sport',
   },
 
   external: {
@@ -87,6 +89,11 @@ export const de: Dict = {
     listEmpty: (prefix: string) =>
       `Es stehen keine Buchungen an. Erstelle eine mit ${prefix}book.`,
     listHeader: 'Kommende Spiele',
+    listAllHeader: 'Alle deine kommenden Spiele',
+    listAllEmpty: (prefix: string) =>
+      `In keiner deiner Gruppen stehen Spiele an. Erstelle eins mit ${prefix}book.`,
+    listAllSentToDm:
+      'Ich habe dir die Liste aller kommenden Spiele aus allen Gruppen privat geschickt, um die Gruppe nicht vollzuspammen.',
     missingFields: (fields: string) => `Mir fehlt noch: ${fields}`,
     badDate: 'Dieses Datum konnte ich nicht lesen. Versuch z. B. 03.09, morgen oder freitag.',
     badTime: 'Diese Uhrzeit konnte ich nicht lesen. Versuch z. B. 19:00.',

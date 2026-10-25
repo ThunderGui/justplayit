@@ -19,6 +19,8 @@ export const en = {
     nobodyYet: 'nobody yet',
     link: 'Link',
     managedOn: 'Managed on',
+    group: 'Group',
+    sport: 'Sport',
   },
 
   /* ---- bookings held on an external platform (Playtomic etc.) ---- */
@@ -90,6 +92,11 @@ export const en = {
     listEmpty: (prefix: string) =>
       `There are no bookings coming up. Create one with ${prefix}book.`,
     listHeader: 'Upcoming games',
+    listAllHeader: 'All your upcoming games',
+    listAllEmpty: (prefix: string) =>
+      `You have no upcoming games in any of your groups. Create one with ${prefix}book.`,
+    listAllSentToDm:
+      "I've sent the full list of upcoming games across all your groups to your private chat, to keep this group tidy.",
     missingFields: (fields: string) => `I still need: ${fields}`,
     badDate: 'I could not read that date. Try something like 03/09, tomorrow, or friday.',
     badTime: 'I could not read that time. Try something like 19:00 or 7pm.',

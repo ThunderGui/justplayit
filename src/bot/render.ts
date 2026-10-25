@@ -8,10 +8,10 @@ import {
   placeLabel,
 } from '../domain/bookings.js';
 import type { PairBalance } from '../domain/ledger.js';
-import { getSettings } from '../domain/settings.js';
+import { getSettings, type Settings } from '../domain/settings.js';
 import { displayName, findUserById } from '../domain/users.js';
 import { externalPlayers } from '../domain/external-sync.js';
-import { findGroupById, type Sport } from '../domain/groups.js';
+import { findGroupById, type Group, type Sport } from '../domain/groups.js';
 import type { Dict } from '../i18n/index.js';
 import { googleCalendarUrl } from '../util/calendar.js';
 import { formatDateTime, formatDayHeading } from '../util/datetime.js';
@@ -265,4 +265,68 @@ export function balanceCard(
 
 function nameOf(userId: number): string {
   return displayName(findUserById(userId));
+}
+
+/** The sport as a display word, e.g. "padel" -> "Padel". Sport names are the
+ *  same across languages for the real ones; "other" just capitalises. */
+export function sportName(sport: Sport | null | undefined): string {
+  if (!sport) return '';
+  return sport.charAt(0).toUpperCase() + sport.slice(1);
+}
+
+export interface GroupedBookingEntry {
+  booking: Booking;
+  group: Group;
+  settings: Settings;
+}
+
+/**
+ * One list across every group the person belongs to, ordered by start time,
+ * with each game tagged by its group and sport. Private-chat only (it would
+ * spam a single group with other groups' games). Each booking's time and money
+ * render in its own group's settings, since groups can differ.
+ */
+export function allGroupsList(entries: GroupedBookingEntry[], dict: Dict): string {
+  if (entries.length === 0) return dict.booking.listAllEmpty(getSettings().commandPrefix);
+
+  const sorted = [...entries].sort((a, b) => a.booking.starts_at.localeCompare(b.booking.starts_at));
+  const out: string[] = [`*${dict.booking.listAllHeader}*`];
+  let currentDay = '';
+
+  for (const { booking, group, settings } of sorted) {
+    const tz = settings.timezone;
+    const lang = settings.language;
+
+    const day = formatDayHeading(booking.starts_at, tz, lang);
+    if (day !== currentDay) {
+      out.push('', `🗓️ *${day}*`);
+      currentDay = day;
+    }
+
+    const E = sportEmoji(booking);
+    const time = DateTime.fromISO(booking.starts_at, { zone: 'utc' }).setZone(tz).toFormat('HH:mm');
+
+    if (isExternal(booking)) {
+      const provider = booking.external_provider ?? 'external';
+      const xp = externalPlayers(booking);
+      const xslots =
+        booking.external_slots_total != null ? ` · 👥 ${xp.length}/${booking.external_slots_total}` : '';
+      out.push(`${E} 🕗 ${time} · *${booking.code}* · ${placeLabel(booking)} · _${provider}_${xslots}`);
+      if (xp.length > 0) out.push(`   ${xp.join(', ')}`);
+    } else {
+      const roster = getRoster(booking.id);
+      const count = roster.confirmed.length;
+      const waiting = roster.waitlist.length > 0 ? ` (+${roster.waitlist.length} ⏳)` : '';
+      const status = count >= booking.max_players ? dict.label.full : `${count}/${booking.max_players}`;
+      out.push(
+        `${E} 🕗 ${time} · *${booking.code}* · ${placeLabel(booking)}` +
+          ` · 👥 ${status}${waiting} · 💰 ${formatMoney(booking.total_cost_cents, booking.currency)}`,
+      );
+    }
+
+    // The new bit: which group and sport this game belongs to.
+    out.push(`   🏷️ ${dict.label.group}: ${group.name ?? group.wa_jid} · ${dict.label.sport}: ${sportName(group.sport)}`);
+  }
+
+  return out.join('\n');
 }
